@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>QRIS Monitor</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+
+  <div class="header">
+    <div class="status-dot" id="statusDot"></div>
+    <span class="header-title">QRIS Payment Monitor</span>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <span class="label">Monitor</span>
+      <span class="value" id="monitorStatus">—</span>
+    </div>
+    <div class="row">
+      <span class="label">Session QRIS</span>
+      <span class="value" id="sessionStatus">—</span>
+    </div>
+    <div class="row">
+      <span class="label">Transaksi hari ini</span>
+      <span class="value highlight" id="totalHariIni">0</span>
+    </div>
+  </div>
+
+  <div class="card last-trx" id="lastTrxCard" style="display:none">
+    <div class="card-label">Transaksi Terakhir</div>
+    <div class="trx-nominal" id="lastNominal">—</div>
+    <div class="trx-meta">
+      <span id="lastNama">—</span> &bull;
+      <span id="lastMetode">—</span>
+    </div>
+    <div class="trx-time" id="lastTime">—</div>
+  </div>
+
+  <div class="actions">
+    <button id="btnBukaQris" class="btn btn-primary">🔗 Buka Halaman QRIS</button>
+    <button id="btnRefresh" class="btn btn-secondary">🔄 Refresh Data</button>
+  </div>
+
+  <div class="footer">
+    v1.0.0 &bull; <span id="lastUpdate">—</span>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

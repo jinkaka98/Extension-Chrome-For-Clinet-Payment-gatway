@@ -1,0 +1,252 @@
+// =============================================================
+// CONTENT SCRIPT — QRIS Payment Monitor
+// Berjalan di dalam tab merchant.qris.interactive.co.id
+// =============================================================
+
+const CONFIG = {
+    // URL patterns
+    URL_LOGIN: '/v2/m/login/',
+    URL_VERIFIKASI: 'verification.php',
+    URL_HISTORI: 'historytrx.php',
+    URL_REDIRECT: 'https://merchant.qris.interactive.co.id/v2/m/kontenr.php?idir=pages/historytrx.php',
+
+    // Polling
+    POLL_INTERVAL_MS: 5000,   // scrape tabel setiap 5 detik
+    COMMAND_POLL_INTERVAL_MS: 8000,   // tanya server ada perintah? setiap ~8 detik
+    COMMAND_JITTER_MS: 2000,   // jitter ±2 detik pada command poll
+
+    // Reload anti-bot
+    RELOAD_BEFORE_MIN: 14,     // reload sebelum 15 menit (14 menit)
+    RELOAD_JITTER_MS: 60000,  // ±60 detik jitter pada auto-reload
+    MIN_RELOAD_GAP_MS: 10000,  // minimal 10 detik antar dua reload
+
+    // Selector tabel — sesuaikan jika struktur DOM berubah
+    TABLE_ROW_SELECTOR: 'table tbody tr',
+    COL: {
+        WAKTU: 1,  // td[1]: tanggal & waktu transaksi
+        NOMINAL: 2,  // td[2]: "Rp 5.182" → 5182
+        STATUS: 3,  // td[3]: "Sukses" dll
+        NAMA: 4,  // td[4]: nama pengirim
+        METODE: 5,  // td[5]: metode pembayaran (Dana, GoPay, dll)
+        KODE_REF: 9,  // td[9]: kode referensi transaksi
+        UID_HASH: 8,  // td[8]: hash unik dari server QRIS (untuk dedup)
+    }
+};
+
+// ── State ──────────────────────────────────────────────────────
+let lastUid = null;   // uid transaksi terbaru yang sudah diproses
+let pollingTimer = null;   // timer scrape
+let commandTimer = null;   // timer command polling
+let reloadCheckTimer = null;  // timer auto-reload
+let lastReloadTime = Date.now();
+let lastUrl = window.location.href;
+let reloadQueue = [];     // queue perintah reload dari server
+let isProcessingQueue = false;
+
+// ── Helper ─────────────────────────────────────────────────────
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+function log(msg, data) {
+    const prefix = '[QRIS Monitor]';
+    data ? console.log(prefix, msg, data) : console.log(prefix, msg);
+}
+
+function parseNominal(str) {
+    if (!str) return 0;
+    return parseInt(str.replace(/[^0-9]/g, ''), 10) || 0;
+}
+
+// ── URL Detection ───────────────────────────────────────────────
+function cekStatusHalaman() {
+    const url = window.location.href;
+
+    if (url.includes(CONFIG.URL_LOGIN)) {
+        log('URL = LOGIN — session expired atau belum login');
+        chrome.runtime.sendMessage({
+            type: 'SESSION_EXPIRED',
+            timestamp: new Date().toISOString()
+        });
+        stopSemua();
+        return;
+    }
+
+    if (url.includes(CONFIG.URL_VERIFIKASI)) {
+        log('URL = VERIFIKASI — baru selesai login, redirect ke histori...');
+        chrome.runtime.sendMessage({ type: 'SUDAH_LOGIN' });
+        setTimeout(() => {
+            window.location.href = CONFIG.URL_REDIRECT;
+        }, 1500);
+        return;
+    }
+
+    if (url.includes(CONFIG.URL_HISTORI)) {
+        log('URL = HISTORI — mulai monitoring transaksi');
+        startScraping();
+        startCommandPolling();
+        startAutoReloadCheck();
+        return;
+    }
+
+    // Halaman lain tapi sudah login (dashboard, dll)
+    log('URL tidak dikenal, redirect ke halaman histori...');
+    window.location.href = CONFIG.URL_REDIRECT;
+}
+
+// ── Scraping ───────────────────────────────────────────────────
+function scrapeTransaksi() {
+    const rows = document.querySelectorAll(CONFIG.TABLE_ROW_SELECTOR);
+
+    if (!rows || rows.length === 0) {
+        log('Tabel transaksi kosong atau belum load');
+        return;
+    }
+
+    const transaksiList = [];
+
+    rows.forEach(row => {
+        const cols = row.querySelectorAll('td');
+        if (cols.length < 10) return; // baris tidak lengkap, skip
+
+        const status = cols[CONFIG.COL.STATUS]?.innerText?.trim();
+        if (status !== 'Sukses') return; // hanya proses transaksi sukses
+
+        const uidHash = cols[CONFIG.COL.UID_HASH]?.innerText?.trim();
+        if (!uidHash) return;
+
+        transaksiList.push({
+            waktu: cols[CONFIG.COL.WAKTU]?.innerText?.trim() || '',
+            nominal_raw: cols[CONFIG.COL.NOMINAL]?.innerText?.trim() || '',
+            nominal: parseNominal(cols[CONFIG.COL.NOMINAL]?.innerText),
+            status: status,
+            nama: cols[CONFIG.COL.NAMA]?.innerText?.trim() || '',
+            metode: cols[CONFIG.COL.METODE]?.innerText?.trim() || '',
+            kode_ref: cols[CONFIG.COL.KODE_REF]?.innerText?.trim() || '',
+            uid_hash: uidHash,
+        });
+    });
+
+    if (transaksiList.length === 0) return;
+
+    const terbaru = transaksiList[0];
+
+    // Dedup: hanya kirim jika transaksi berbeda dari terakhir
+    if (terbaru.uid_hash !== lastUid) {
+        log('Transaksi baru terdeteksi!', terbaru);
+        lastUid = terbaru.uid_hash;
+
+        chrome.runtime.sendMessage({
+            type: 'TRANSAKSI_BARU',
+            data: terbaru,
+            semua: transaksiList.slice(0, 5)
+        });
+    }
+}
+
+// ── Start/Stop Polling ─────────────────────────────────────────
+function startScraping() {
+    if (pollingTimer) return;
+    log('Mulai polling scrape setiap', CONFIG.POLL_INTERVAL_MS + 'ms');
+    scrapeTransaksi(); // langsung cek sekali
+    pollingTimer = setInterval(scrapeTransaksi, CONFIG.POLL_INTERVAL_MS);
+}
+
+function stopScraping() {
+    if (pollingTimer) { clearInterval(pollingTimer); pollingTimer = null; }
+}
+
+// ── Command Polling dari Server ────────────────────────────────
+// Extension polling ke server: "ada perintah untuk saya?"
+// Server bisa balas { command: 'CEK_SEKARANG' } saat ada order baru
+function startCommandPolling() {
+    if (commandTimer) return;
+    commandTimer = setInterval(async () => {
+        try {
+            const jitter = Math.random() * CONFIG.COMMAND_JITTER_MS;
+            await sleep(jitter);
+
+            // background.js yang handle fetch ke server (karena host_permissions)
+            const response = await chrome.runtime.sendMessage({ type: 'CEK_PERINTAH' });
+
+            if (response?.command === 'CEK_SEKARANG') {
+                log('Server minta cek sekarang!');
+                enqueueReload('server_command');
+            }
+        } catch (e) {
+            // Background sedang tidak aktif, skip
+        }
+    }, CONFIG.COMMAND_POLL_INTERVAL_MS);
+}
+
+function stopCommandPolling() {
+    if (commandTimer) { clearInterval(commandTimer); commandTimer = null; }
+}
+
+// ── Queue Reload (anti-bot, anti-spam) ─────────────────────────
+function enqueueReload(trigger) {
+    reloadQueue.push({ trigger, queuedAt: Date.now() });
+    if (!isProcessingQueue) processReloadQueue();
+}
+
+async function processReloadQueue() {
+    isProcessingQueue = true;
+    while (reloadQueue.length > 0) {
+        const item = reloadQueue.shift();
+        const timeSinceLast = Date.now() - lastReloadTime;
+
+        // Pastikan minimal 10 detik dari reload terakhir
+        if (timeSinceLast < CONFIG.MIN_RELOAD_GAP_MS) {
+            await sleep(CONFIG.MIN_RELOAD_GAP_MS - timeSinceLast);
+        }
+
+        // Jeda random 2–8 detik sebelum reload (simulasi human)
+        const humanDelay = 2000 + Math.random() * 6000;
+        log(`Akan reload dalam ${Math.round(humanDelay / 1000)}s (trigger: ${item.trigger})`);
+        await sleep(humanDelay);
+
+        lastReloadTime = Date.now();
+        location.reload();
+        return; // reload memutus eksekusi, queue lanjut setelah halaman load ulang
+    }
+    isProcessingQueue = false;
+}
+
+// ── Auto-Reload Sebelum Sesi Habis ────────────────────────────
+// QRIS merchant session ~15 menit → kita reload di menit ke ~14
+function startAutoReloadCheck() {
+    if (reloadCheckTimer) return;
+    reloadCheckTimer = setInterval(() => {
+        const elapsed = Date.now() - lastReloadTime;
+        const targetMs = CONFIG.RELOAD_BEFORE_MIN * 60 * 1000;
+        const jitter = Math.random() * CONFIG.RELOAD_JITTER_MS;
+
+        if (elapsed >= targetMs + jitter) {
+            log('Auto-reload untuk jaga sesi tetap aktif');
+            enqueueReload('anti_session_timeout');
+        }
+    }, 30000); // evaluasi setiap 30 detik
+}
+
+// ── Stop Semua (saat logout / session expired) ─────────────────
+function stopSemua() {
+    stopScraping();
+    stopCommandPolling();
+    if (reloadCheckTimer) { clearInterval(reloadCheckTimer); reloadCheckTimer = null; }
+    log('Semua monitoring dihentikan karena session expired');
+}
+
+// ── SPA Navigation Observer ────────────────────────────────────
+// Deteksi perubahan URL tanpa full page load (React/Vue routing)
+const urlObserver = new MutationObserver(() => {
+    if (window.location.href !== lastUrl) {
+        lastUrl = window.location.href;
+        log('URL berubah ke:', lastUrl);
+        stopScraping();
+        stopCommandPolling();
+        setTimeout(cekStatusHalaman, 1000);
+    }
+});
+urlObserver.observe(document.body, { childList: true, subtree: true });
+
+// ── Init ───────────────────────────────────────────────────────
+log('Content script aktif, cek status halaman...');
+cekStatusHalaman();

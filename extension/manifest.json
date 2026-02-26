@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "QRIS Payment Monitor",
+  "version": "1.0.0",
+  "description": "Monitor transaksi QRIS merchant secara otomatis dan teruskan ke web server.",
+  "permissions": [
+    "storage",
+    "alarms",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://merchant.qris.interactive.co.id/*",
+    "http://192.168.1.15/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://merchant.qris.interactive.co.id/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  }
+}

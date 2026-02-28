@@ -136,8 +136,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
             // Content script minta tanya server: ada perintah?
             case 'CEK_PERINTAH': {
-                const data = await getFromServer('pending-commands');
-                sendResponse(data || { command: null });
+                const serverResponse = await getFromServer('pending-commands');
+                // Server returns { success, message, data: { command, order_id } }
+                // Content.js expects { command: 'CEK_SEKARANG' }
+                const commandData = serverResponse?.data || { command: null };
+                sendResponse(commandData);
                 break;
             }
 

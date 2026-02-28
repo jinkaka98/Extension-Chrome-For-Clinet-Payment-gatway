@@ -22,14 +22,18 @@ const CONFIG = {
 
     // Selector tabel — sesuaikan jika struktur DOM berubah
     TABLE_ROW_SELECTOR: 'table tbody tr',
+    // DataTables menambah 2 hidden cols (raw nominal [3], sort [4])
+    // Total 13 kolom: No[0] Waktu[1] Nominal[2] RawNom[3] Sort[4] Status[5]
+    //   Nama[6] Metode[7] RRN[8] Keterangan[9] IDTransaksi[10] IDInvoice[11] Settlement[12]
     COL: {
-        WAKTU: 1,  // td[1]: tanggal & waktu transaksi
-        NOMINAL: 2,  // td[2]: "Rp 5.182" → 5182
-        STATUS: 3,  // td[3]: "Sukses" dll
-        NAMA: 4,  // td[4]: nama pengirim
-        METODE: 5,  // td[5]: metode pembayaran (Dana, GoPay, dll)
-        KODE_REF: 9,  // td[9]: kode referensi transaksi
-        UID_HASH: 8,  // td[8]: hash unik dari server QRIS (untuk dedup)
+        WAKTU: 1,      // td[1]: tanggal & waktu transaksi
+        NOMINAL: 2,    // td[2]: "Rp 1.665" → parseNominal → 1665
+        STATUS: 5,     // td[5]: "Sukses" (shifted +2 dari visual karena hidden cols)
+        NAMA: 6,       // td[6]: nama pengirim
+        METODE: 7,     // td[7]: metode pembayaran (Dana, GoPay, dll)
+        RRN: 8,        // td[8]: RRN
+        KODE_REF: 9,   // td[9]: keterangan
+        UID_HASH: 10,  // td[10]: ID Transaksi (hash unik untuk dedup)
     }
 };
 
@@ -117,8 +121,8 @@ function scrapeTransaksi() {
             log('DEBUG DUMP Row 0 (' + cols.length + ' cols): ' + dump.join(' | '));
         }
 
-        if (cols.length < 10) {
-            if (idx === 0) log(`DEBUG: Row ${idx} hanya punya ${cols.length} kolom (butuh >=10), SKIP`);
+        if (cols.length < 11) {
+            if (idx === 0) log(`DEBUG: Row ${idx} hanya punya ${cols.length} kolom (butuh >=11), SKIP`);
             return;
         }
 

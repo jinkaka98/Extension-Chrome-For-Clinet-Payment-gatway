@@ -107,6 +107,16 @@ function scrapeTransaksi() {
 
     rows.forEach((row, idx) => {
         const cols = row.querySelectorAll('td');
+
+        // Dump ALL columns for first row to find correct mapping
+        if (idx === 0) {
+            const dump = [];
+            for (let i = 0; i < cols.length; i++) {
+                dump.push(`[${i}]="${(cols[i]?.innerText?.trim() || '').substring(0, 30)}"`);
+            }
+            log('DEBUG DUMP Row 0 (' + cols.length + ' cols): ' + dump.join(' | '));
+        }
+
         if (cols.length < 10) {
             if (idx === 0) log(`DEBUG: Row ${idx} hanya punya ${cols.length} kolom (butuh >=10), SKIP`);
             return;

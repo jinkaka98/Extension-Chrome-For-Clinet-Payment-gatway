@@ -130,8 +130,12 @@ function scrapeTransaksi() {
     const terbaru = transaksiList[0];
 
     // Dedup: hanya kirim jika transaksi berbeda dari terakhir
+    // PENTING: Jika lastUid masih null (pertama kali scraping setelah load),
+    // SELALU kirim transaksi terbaru agar backend bisa match pembayaran
+    // yang masuk sebelum/saat halaman load. Backend punya idempotency via uid_hash.
     if (terbaru.uid_hash !== lastUid) {
-        log('Transaksi baru terdeteksi!', terbaru);
+        const isFirstScrape = (lastUid === null);
+        log(isFirstScrape ? 'Scraping pertama — kirim transaksi terbaru ke server:' : 'Transaksi baru terdeteksi!', terbaru);
         lastUid = terbaru.uid_hash;
 
         chrome.runtime.sendMessage({

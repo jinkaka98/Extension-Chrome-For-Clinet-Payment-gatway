@@ -101,17 +101,30 @@ function scrapeTransaksi() {
         return;
     }
 
+    log(`DEBUG: Ditemukan ${rows.length} row di tabel`);
+
     const transaksiList = [];
 
-    rows.forEach(row => {
+    rows.forEach((row, idx) => {
         const cols = row.querySelectorAll('td');
-        if (cols.length < 10) return; // baris tidak lengkap, skip
+        if (cols.length < 10) {
+            if (idx === 0) log(`DEBUG: Row ${idx} hanya punya ${cols.length} kolom (butuh >=10), SKIP`);
+            return;
+        }
 
         const status = cols[CONFIG.COL.STATUS]?.innerText?.trim();
-        if (status !== 'Sukses') return; // hanya proses transaksi sukses
+        if (idx === 0) log(`DEBUG: Row 0 — status="${status}", nominal="${cols[CONFIG.COL.NOMINAL]?.innerText?.trim()}", uid="${cols[CONFIG.COL.UID_HASH]?.innerText?.trim()}", cols=${cols.length}`);
+
+        if (status !== 'Sukses') {
+            if (idx === 0) log(`DEBUG: Row ${idx} status bukan 'Sukses' → "${status}", SKIP`);
+            return;
+        }
 
         const uidHash = cols[CONFIG.COL.UID_HASH]?.innerText?.trim();
-        if (!uidHash) return;
+        if (!uidHash) {
+            if (idx === 0) log(`DEBUG: Row ${idx} uid_hash kosong, SKIP`);
+            return;
+        }
 
         transaksiList.push({
             waktu: cols[CONFIG.COL.WAKTU]?.innerText?.trim() || '',
@@ -125,6 +138,7 @@ function scrapeTransaksi() {
         });
     });
 
+    log(`DEBUG: ${transaksiList.length} transaksi sukses ditemukan`);
     if (transaksiList.length === 0) return;
 
     const terbaru = transaksiList[0];

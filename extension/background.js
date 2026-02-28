@@ -86,7 +86,33 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     (async () => {
         switch (message.type) {
 
-            // Transaksi baru terdeteksi dari scraping DOM
+            // Batch transaksi baru terdeteksi dari scraping DOM (multi-order support)
+            case 'TRANSAKSI_BATCH': {
+                const batch = message.batch || [];
+                console.log(`[QRIS BG] Batch ${batch.length} transaksi baru diterima`);
+
+                // Kirim batch ke server dalam satu request
+                const result = await kirimKeServer('transaksi-batch', {
+                    transaksi_list: batch
+                });
+
+                // Update storage untuk popup
+                if (batch.length > 0) {
+                    await chrome.storage.local.set({
+                        lastTransaksi: batch[0],
+                        lastTransaksiTime: new Date().toISOString()
+                    });
+
+                    // Increment counter harian
+                    const { totalHariIni = 0 } = await chrome.storage.local.get('totalHariIni');
+                    await chrome.storage.local.set({ totalHariIni: totalHariIni + batch.length });
+                }
+
+                sendResponse({ ok: true, result });
+                break;
+            }
+
+            // Backward-compat: single transaksi (lama)
             case 'TRANSAKSI_BARU': {
                 console.log('[QRIS BG] Transaksi baru diterima:', message.data?.nominal_raw);
 
@@ -95,13 +121,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     konteks: message.semua
                 });
 
-                // Update storage untuk popup
                 await chrome.storage.local.set({
                     lastTransaksi: message.data,
                     lastTransaksiTime: new Date().toISOString()
                 });
 
-                // Increment counter harian
                 const { totalHariIni = 0 } = await chrome.storage.local.get('totalHariIni');
                 await chrome.storage.local.set({ totalHariIni: totalHariIni + 1 });
 

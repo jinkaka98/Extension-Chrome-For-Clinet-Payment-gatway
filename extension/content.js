@@ -12,13 +12,13 @@ const CONFIG = {
 
     // Polling
     POLL_INTERVAL_MS: 5000,   // scrape tabel setiap 5 detik
-    COMMAND_POLL_INTERVAL_MS: 8000,   // tanya server ada perintah? setiap ~8 detik
+    COMMAND_POLL_INTERVAL_MS: 30000,  // tanya server ada perintah? setiap ~30 detik
     COMMAND_JITTER_MS: 2000,   // jitter ±2 detik pada command poll
 
     // Reload anti-bot
     RELOAD_BEFORE_MIN: 14,     // reload sebelum 15 menit (14 menit)
     RELOAD_JITTER_MS: 60000,  // ±60 detik jitter pada auto-reload
-    MIN_RELOAD_GAP_MS: 10000,  // minimal 10 detik antar dua reload
+    MIN_RELOAD_GAP_MS: 25000,  // minimal 25 detik antar dua reload
 
     // Selector tabel — sesuaikan jika struktur DOM berubah
     TABLE_ROW_SELECTOR: 'table tbody tr',
@@ -38,13 +38,13 @@ const CONFIG = {
 };
 
 // ── State ──────────────────────────────────────────────────────
-let lastUid = null;   // uid transaksi terbaru yang sudah diproses
-let pollingTimer = null;   // timer scrape
-let commandTimer = null;   // timer command polling
-let reloadCheckTimer = null;  // timer auto-reload
+const knownUids = new Set();   // Set uid transaksi yang sudah dikirim
+let pollingTimer = null;
+let commandTimer = null;
+let reloadCheckTimer = null;
 let lastReloadTime = Date.now();
 let lastUrl = window.location.href;
-let reloadQueue = [];     // queue perintah reload dari server
+let reloadQueue = [];
 let isProcessingQueue = false;
 
 // ── Helper ─────────────────────────────────────────────────────
@@ -96,7 +96,7 @@ function cekStatusHalaman() {
     window.location.href = CONFIG.URL_REDIRECT;
 }
 
-// ── Scraping ───────────────────────────────────────────────────
+// ── Scraping (Batch Support) ──────────────────────────────────
 function scrapeTransaksi() {
     const rows = document.querySelectorAll(CONFIG.TABLE_ROW_SELECTOR);
 
@@ -105,40 +105,17 @@ function scrapeTransaksi() {
         return;
     }
 
-    log(`DEBUG: Ditemukan ${rows.length} row di tabel`);
-
     const transaksiList = [];
 
-    rows.forEach((row, idx) => {
+    rows.forEach((row) => {
         const cols = row.querySelectorAll('td');
-
-        // Dump ALL columns for first row to find correct mapping
-        if (idx === 0) {
-            const dump = [];
-            for (let i = 0; i < cols.length; i++) {
-                dump.push(`[${i}]="${(cols[i]?.innerText?.trim() || '').substring(0, 30)}"`);
-            }
-            log('DEBUG DUMP Row 0 (' + cols.length + ' cols): ' + dump.join(' | '));
-        }
-
-        if (cols.length < 11) {
-            if (idx === 0) log(`DEBUG: Row ${idx} hanya punya ${cols.length} kolom (butuh >=11), SKIP`);
-            return;
-        }
+        if (cols.length < 11) return; // skip loading/incomplete rows
 
         const status = cols[CONFIG.COL.STATUS]?.innerText?.trim();
-        if (idx === 0) log(`DEBUG: Row 0 — status="${status}", nominal="${cols[CONFIG.COL.NOMINAL]?.innerText?.trim()}", uid="${cols[CONFIG.COL.UID_HASH]?.innerText?.trim()}", cols=${cols.length}`);
-
-        if (status !== 'Sukses') {
-            if (idx === 0) log(`DEBUG: Row ${idx} status bukan 'Sukses' → "${status}", SKIP`);
-            return;
-        }
+        if (status !== 'Sukses') return;
 
         const uidHash = cols[CONFIG.COL.UID_HASH]?.innerText?.trim();
-        if (!uidHash) {
-            if (idx === 0) log(`DEBUG: Row ${idx} uid_hash kosong, SKIP`);
-            return;
-        }
+        if (!uidHash) return;
 
         transaksiList.push({
             waktu: cols[CONFIG.COL.WAKTU]?.innerText?.trim() || '',
@@ -152,26 +129,26 @@ function scrapeTransaksi() {
         });
     });
 
-    log(`DEBUG: ${transaksiList.length} transaksi sukses ditemukan`);
     if (transaksiList.length === 0) return;
 
-    const terbaru = transaksiList[0];
+    // Filter: hanya transaksi BARU yang belum pernah dikirim
+    const baruList = transaksiList.filter(t => !knownUids.has(t.uid_hash));
 
-    // Dedup: hanya kirim jika transaksi berbeda dari terakhir
-    // PENTING: Jika lastUid masih null (pertama kali scraping setelah load),
-    // SELALU kirim transaksi terbaru agar backend bisa match pembayaran
-    // yang masuk sebelum/saat halaman load. Backend punya idempotency via uid_hash.
-    if (terbaru.uid_hash !== lastUid) {
-        const isFirstScrape = (lastUid === null);
-        log(isFirstScrape ? 'Scraping pertama — kirim transaksi terbaru ke server:' : 'Transaksi baru terdeteksi!', terbaru);
-        lastUid = terbaru.uid_hash;
-
-        chrome.runtime.sendMessage({
-            type: 'TRANSAKSI_BARU',
-            data: terbaru,
-            semua: transaksiList.slice(0, 5)
-        });
+    // Tandai SEMUA transaksi sebagai known (termasuk yang lama)
+    for (const t of transaksiList) {
+        knownUids.add(t.uid_hash);
     }
+
+    if (baruList.length === 0) return; // semua sudah pernah dikirim
+
+    log(`${baruList.length} transaksi baru dikirim ke server (total known: ${knownUids.size})`,
+        baruList.map(t => `${t.nominal_raw} [${t.uid_hash.substring(0, 8)}]`));
+
+    // Kirim BATCH ke background.js — semua transaksi baru sekaligus
+    chrome.runtime.sendMessage({
+        type: 'TRANSAKSI_BATCH',
+        batch: baruList
+    });
 }
 
 // ── Start/Stop Polling ─────────────────────────────────────────
@@ -187,8 +164,6 @@ function stopScraping() {
 }
 
 // ── Command Polling dari Server ────────────────────────────────
-// Extension polling ke server: "ada perintah untuk saya?"
-// Server bisa balas { command: 'CEK_SEKARANG' } saat ada order baru
 function startCommandPolling() {
     if (commandTimer) return;
     commandTimer = setInterval(async () => {
@@ -196,7 +171,6 @@ function startCommandPolling() {
             const jitter = Math.random() * CONFIG.COMMAND_JITTER_MS;
             await sleep(jitter);
 
-            // background.js yang handle fetch ke server (karena host_permissions)
             const response = await chrome.runtime.sendMessage({ type: 'CEK_PERINTAH' });
 
             if (response?.command === 'CEK_SEKARANG') {
@@ -225,7 +199,7 @@ async function processReloadQueue() {
         const item = reloadQueue.shift();
         const timeSinceLast = Date.now() - lastReloadTime;
 
-        // Pastikan minimal 10 detik dari reload terakhir
+        // Pastikan minimal 25 detik dari reload terakhir
         if (timeSinceLast < CONFIG.MIN_RELOAD_GAP_MS) {
             await sleep(CONFIG.MIN_RELOAD_GAP_MS - timeSinceLast);
         }
@@ -237,13 +211,12 @@ async function processReloadQueue() {
 
         lastReloadTime = Date.now();
         location.reload();
-        return; // reload memutus eksekusi, queue lanjut setelah halaman load ulang
+        return; // reload memutus eksekusi
     }
     isProcessingQueue = false;
 }
 
 // ── Auto-Reload Sebelum Sesi Habis ────────────────────────────
-// QRIS merchant session ~15 menit → kita reload di menit ke ~14
 function startAutoReloadCheck() {
     if (reloadCheckTimer) return;
     reloadCheckTimer = setInterval(() => {
@@ -255,10 +228,10 @@ function startAutoReloadCheck() {
             log('Auto-reload untuk jaga sesi tetap aktif');
             enqueueReload('anti_session_timeout');
         }
-    }, 30000); // evaluasi setiap 30 detik
+    }, 30000);
 }
 
-// ── Stop Semua (saat logout / session expired) ─────────────────
+// ── Stop Semua ─────────────────────────────────────────────────
 function stopSemua() {
     stopScraping();
     stopCommandPolling();
@@ -267,7 +240,6 @@ function stopSemua() {
 }
 
 // ── SPA Navigation Observer ────────────────────────────────────
-// Deteksi perubahan URL tanpa full page load (React/Vue routing)
 const urlObserver = new MutationObserver(() => {
     if (window.location.href !== lastUrl) {
         lastUrl = window.location.href;

@@ -40,7 +40,15 @@
 
   <div class="actions">
     <button id="btnBukaQris" class="btn btn-primary">🔗 Buka Halaman QRIS</button>
+    <button id="btnPing" class="btn btn-ping">📡 Test Ping Server</button>
     <button id="btnRefresh" class="btn btn-secondary">🔄 Refresh Data</button>
+  </div>
+
+  <div class="card ping-result" id="pingResultCard" style="display:none">
+    <div class="card-label">Hasil Ping</div>
+    <div class="ping-status" id="pingStatus">—</div>
+    <div class="ping-latency" id="pingLatency">—</div>
+    <div class="ping-meta" id="pingMeta">—</div>
   </div>
 
   <div class="footer">

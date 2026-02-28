@@ -146,6 +146,53 @@ body {
 }
 .btn-secondary:hover { border-color: var(--accent); }
 
+.btn-ping {
+  background: linear-gradient(135deg, #0d9488, #06b6d4);
+  color: #fff;
+  position: relative;
+  overflow: hidden;
+}
+.btn-ping:hover { opacity: 0.85; }
+.btn-ping:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+.btn-ping:disabled::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
+  animation: shimmer 1.2s infinite;
+}
+
+@keyframes shimmer {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+/* Ping Result Card */
+.ping-result {
+  padding: 10px 14px !important;
+}
+
+.ping-status {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
+.ping-latency {
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
+.ping-meta {
+  font-size: 10px;
+  color: var(--muted);
+  word-break: break-all;
+}
+
 /* Footer */
 .footer {
   text-align: center;

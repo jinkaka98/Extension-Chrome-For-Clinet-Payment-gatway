@@ -91,5 +91,60 @@ document.getElementById('btnRefresh').addEventListener('click', () => {
     loadData();
 });
 
+// ── Tombol Test Ping Server ──────────────────────────────────
+document.getElementById('btnPing').addEventListener('click', async () => {
+    const btn = document.getElementById('btnPing');
+    const card = document.getElementById('pingResultCard');
+    const statusEl = document.getElementById('pingStatus');
+    const latencyEl = document.getElementById('pingLatency');
+    const metaEl = document.getElementById('pingMeta');
+
+    // Loading state
+    btn.disabled = true;
+    btn.textContent = '⏳ Menguji koneksi...';
+    card.style.display = 'block';
+    statusEl.textContent = '⏳ Mengirim ping...';
+    statusEl.style.color = '';
+    latencyEl.textContent = '';
+    metaEl.textContent = '';
+
+    try {
+        const result = await chrome.runtime.sendMessage({ type: 'PING_SERVER' });
+
+        if (result && result.ok) {
+            statusEl.textContent = '✅ Server Terjangkau';
+            statusEl.style.color = '#00e676';
+            latencyEl.textContent = `⚡ ${result.latency}ms (HTTP ${result.httpCode})`;
+            latencyEl.style.color = result.latency < 300 ? '#00e676' : result.latency < 1000 ? '#ffd740' : '#ff5252';
+        } else if (result && result.status === 'error') {
+            statusEl.textContent = `⚠️ Server Error`;
+            statusEl.style.color = '#ffd740';
+            latencyEl.textContent = `${result.latency}ms — ${result.error}`;
+            latencyEl.style.color = '#ffd740';
+        } else if (result && result.status === 'unreachable') {
+            statusEl.textContent = '🔴 Server Tidak Terjangkau';
+            statusEl.style.color = '#ff5252';
+            latencyEl.textContent = result.error || 'Connection failed';
+            latencyEl.style.color = '#ff5252';
+        } else {
+            statusEl.textContent = '❓ Respon tidak diketahui';
+            statusEl.style.color = '#ffd740';
+        }
+
+        if (result && result.serverUrl) {
+            metaEl.textContent = `${result.serverUrl} • ${formatWaktu(result.testedAt)}`;
+        }
+    } catch (e) {
+        statusEl.textContent = '🔴 Gagal mengirim ping';
+        statusEl.style.color = '#ff5252';
+        latencyEl.textContent = e.message;
+        latencyEl.style.color = '#ff5252';
+        metaEl.textContent = '';
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '📡 Test Ping Server';
+    }
+});
+
 // Load saat popup dibuka
 loadData();

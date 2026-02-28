@@ -141,6 +141,60 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 break;
             }
 
+            // Test Ping ke server tujuan
+            case 'PING_SERVER': {
+                console.log('[QRIS BG] Ping server...');
+                const startTime = performance.now();
+                try {
+                    const res = await fetch(`${API_BASE}/heartbeat`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Monitor-Key': API_KEY
+                        },
+                        body: JSON.stringify({ ping: true, timestamp: new Date().toISOString() })
+                    });
+                    const endTime = performance.now();
+                    const latency = Math.round(endTime - startTime);
+
+                    if (res.ok) {
+                        let serverData = null;
+                        try { serverData = await res.json(); } catch { }
+                        sendResponse({
+                            ok: true,
+                            status: 'reachable',
+                            httpCode: res.status,
+                            latency,
+                            serverUrl: API_BASE,
+                            serverResponse: serverData,
+                            testedAt: new Date().toISOString()
+                        });
+                    } else {
+                        sendResponse({
+                            ok: false,
+                            status: 'error',
+                            httpCode: res.status,
+                            latency,
+                            serverUrl: API_BASE,
+                            error: `HTTP ${res.status} ${res.statusText}`,
+                            testedAt: new Date().toISOString()
+                        });
+                    }
+                } catch (e) {
+                    const endTime = performance.now();
+                    const latency = Math.round(endTime - startTime);
+                    sendResponse({
+                        ok: false,
+                        status: 'unreachable',
+                        latency,
+                        serverUrl: API_BASE,
+                        error: e.message,
+                        testedAt: new Date().toISOString()
+                    });
+                }
+                break;
+            }
+
             default:
                 sendResponse({ ok: false, error: 'Unknown message type' });
         }

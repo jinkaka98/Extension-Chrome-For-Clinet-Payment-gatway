@@ -5,7 +5,7 @@
 // =============================================================
 
 // ⚠️ SETTING UNTUK LOCAL TESTING
-const API_BASE = 'http://192.168.1.15/server/api/qris';
+const API_BASE = 'http://192.168.1.12:8000/api/qris';
 const API_KEY = 'AlpaKyros_QRIS_Monitor_2026';
 
 // ── HTTP Helper ───────────────────────────────────────────────

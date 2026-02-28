@@ -146,7 +146,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 console.log('[QRIS BG] Ping server...');
                 const startTime = performance.now();
                 try {
-                    const res = await fetch(`${API_BASE}/heartbeat`, {
+                    const res = await fetch(`${API_BASE}/ping`, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',

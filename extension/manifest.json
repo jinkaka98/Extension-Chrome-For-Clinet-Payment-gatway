@@ -10,15 +10,19 @@
   ],
   "host_permissions": [
     "https://merchant.qris.interactive.co.id/*",
-    "http://192.168.1.15/*"
+    "http://192.168.1.12:8000/*"
   ],
   "background": {
     "service_worker": "background.js"
   },
   "content_scripts": [
     {
-      "matches": ["https://merchant.qris.interactive.co.id/*"],
-      "js": ["content.js"],
+      "matches": [
+        "https://merchant.qris.interactive.co.id/*"
+      ],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_idle"
     }
   ],

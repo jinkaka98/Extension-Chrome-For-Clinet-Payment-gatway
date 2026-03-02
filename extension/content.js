@@ -60,6 +60,63 @@ function parseNominal(str) {
     return parseInt(str.replace(/[^0-9]/g, ''), 10) || 0;
 }
 
+// ── Auto-fill Login (Staff Account) ────────────────────────────
+const STAFF_CREDS = {
+    email: 'nurulnisya217@gmail.com',
+    pass: '@Merdeka321'
+};
+
+function autoFillLogin() {
+    let attempts = 0;
+    const maxAttempts = 10;
+
+    const tryFill = () => {
+        const emailEl = document.querySelector('input[type="email"], input[name="email"], input[placeholder*="email" i]');
+        const passEl = document.querySelector('input[type="password"]');
+
+        if (!emailEl || !passEl) {
+            if (++attempts < maxAttempts) setTimeout(tryFill, 500);
+            return;
+        }
+
+        // Isi field
+        const setVal = (el, val) => {
+            el.focus();
+            el.value = val;
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+        };
+        setVal(emailEl, STAFF_CREDS.email);
+        setVal(passEl, STAFF_CREDS.pass);
+        log('Auto-fill login berhasil');
+
+        // Inject tombol "Login Otomatis" jika belum ada
+        if (document.getElementById('qris-autologin-btn')) return;
+
+        const btn = document.createElement('button');
+        btn.id = 'qris-autologin-btn';
+        btn.type = 'button';
+        btn.textContent = '🔑 Login Otomatis (Staff Monitor)';
+        btn.style.cssText = [
+            'display:block', 'width:100%', 'margin-top:10px',
+            'padding:10px 16px', 'background:#f2d00d', 'color:#000',
+            'border:2px solid #000', 'border-radius:6px',
+            'font-weight:700', 'font-size:14px', 'cursor:pointer',
+            'box-shadow:3px 3px 0 #000', 'transition:all .15s'
+        ].join(';');
+        btn.addEventListener('click', () => {
+            // Re-fill (just in case cleared) then find & click submit
+            setVal(emailEl, STAFF_CREDS.email);
+            setVal(passEl, STAFF_CREDS.pass);
+            const submitBtn = document.querySelector('button[type="submit"], input[type="submit"]');
+            if (submitBtn) submitBtn.click();
+        });
+        // Masukkan setelah form password
+        passEl.closest('div, form')?.appendChild(btn);
+    };
+    setTimeout(tryFill, 800);
+}
+
 // ── URL Detection ───────────────────────────────────────────────
 function cekStatusHalaman() {
     const url = window.location.href;
@@ -71,6 +128,9 @@ function cekStatusHalaman() {
             timestamp: new Date().toISOString()
         });
         stopSemua();
+
+        // Auto-fill login credentials (akun staff monitor)
+        autoFillLogin();
         return;
     }
 

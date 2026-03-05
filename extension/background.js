@@ -1,70 +1,159 @@
 // =============================================================
 // BACKGROUND SERVICE WORKER — QRIS Payment Monitor
-// Relay pesan dari content.js ke PHP web server via fetch()
+// DUAL BROADCAST MODE: kirim ke semua server aktif secara paralel
+// Jika Local + Production keduanya online → keduanya menerima data
 // =============================================================
 
-// ── Konfigurasi Server (dibaca dari storage, bisa diubah via popup) ─────────
 const API_KEY = 'AlpaKyros_QRIS_Monitor_2026';
+const PING_TIMEOUT_MS = 3000; // timeout cek server (3 detik)
 
-// Default target jika belum pernah di-set via popup
-const DEFAULT_TARGET = {
-    mode: 'local',               // 'local' | 'production'
-    localUrl: 'http://192.168.1.12:8000/api/qris',
-    productionUrl: 'https://alpakyros.com/api/qris'
+// ── Konfigurasi Default Server ────────────────────────────────
+const DEFAULT_SERVERS = {
+    local: {
+        id: 'local',
+        label: 'Local 🏠',
+        url: 'http://192.168.1.12:8000/api/qris',
+        enabled: true   // selalu dicoba, tapi aktif hanya kalau respond
+    },
+    production: {
+        id: 'production',
+        label: 'Production 🌐',
+        url: 'https://alpakyros.com/api/qris',
+        enabled: true
+    }
 };
 
-// Ambil API_BASE aktif dari storage
-async function getApiBase() {
-    const { serverTarget } = await chrome.storage.local.get('serverTarget');
-    const t = serverTarget || DEFAULT_TARGET;
-    return t.mode === 'production' ? t.productionUrl : t.localUrl;
+// ── Ambil konfigurasi server dari storage ─────────────────────
+async function getServers() {
+    const { serverConfig } = await chrome.storage.local.get('serverConfig');
+    return serverConfig || DEFAULT_SERVERS;
 }
 
-// ── HTTP Helper ───────────────────────────────────────────────
-async function kirimKeServer(endpoint, payload = {}) {
-    const API_BASE = await getApiBase();
+// ── Cek apakah satu server reachable (dengan timeout) ─────────
+async function checkServer(serverObj) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), PING_TIMEOUT_MS);
+
     try {
-        const res = await fetch(`${API_BASE}/${endpoint}`, {
+        const res = await fetch(`${serverObj.url}/ping`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'X-Monitor-Key': API_KEY
             },
-            body: JSON.stringify({
-                ...payload,
-                timestamp: new Date().toISOString()
-            })
+            body: JSON.stringify({ ping: true, timestamp: new Date().toISOString() }),
+            signal: controller.signal
         });
-
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return await res.json();
-    } catch (e) {
-        console.warn('[QRIS BG] Gagal kirim ke server:', endpoint, e.message);
-        // Simpan ke pending queue
-        await queuePesan(endpoint, payload);
-        return null;
+        clearTimeout(timer);
+        return res.ok;
+    } catch {
+        clearTimeout(timer);
+        return false;
     }
 }
 
-async function getFromServer(endpoint) {
-    const API_BASE = await getApiBase();
+// ── Auto-detect: cek kedua server, update status di storage ───
+async function autoDetectServers() {
+    const servers = await getServers();
+    const checks = await Promise.all([
+        checkServer(servers.local).then(ok => ({ id: 'local', reachable: ok })),
+        checkServer(servers.production).then(ok => ({ id: 'production', reachable: ok }))
+    ]);
+
+    const statusMap = {};
+    for (const c of checks) {
+        statusMap[c.id] = c.reachable;
+    }
+
+    // Simpan hasil deteksi ke storage
+    await chrome.storage.local.set({ serverReachability: statusMap });
+
+    const aktif = checks.filter(c => c.reachable).map(c => c.id);
+    console.log('[QRIS BG] Auto-detect selesai. Aktif:', aktif.length > 0 ? aktif.join(' + ') : 'tidak ada');
+
+    return statusMap;
+}
+
+// ── Ambil daftar URL server yang aktif (reachable) ────────────
+async function getActiveServerUrls() {
+    const servers = await getServers();
+    const { serverReachability } = await chrome.storage.local.get('serverReachability');
+
+    // Jika belum pernah detect, anggap semua aktif dulu
+    if (!serverReachability) {
+        return [servers.local.url, servers.production.url];
+    }
+
+    const aktif = [];
+    if (serverReachability.local) aktif.push(servers.local.url);
+    if (serverReachability.production) aktif.push(servers.production.url);
+
+    // Fallback: jika tidak ada yang aktif, coba production
+    if (aktif.length === 0) aktif.push(servers.production.url);
+
+    return aktif;
+}
+
+// ── HTTP Helper: kirim ke SATU URL ───────────────────────────
+async function kirimSatu(url, endpoint, payload) {
     try {
-        const res = await fetch(`${API_BASE}/${endpoint}`, {
-            method: 'GET',
-            headers: { 'X-Monitor-Key': API_KEY }
+        const res = await fetch(`${url}/${endpoint}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Monitor-Key': API_KEY
+            },
+            body: JSON.stringify({ ...payload, timestamp: new Date().toISOString() })
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return await res.json();
+        return { url, ok: true, data: await res.json() };
     } catch (e) {
-        console.warn('[QRIS BG] Gagal GET dari server:', endpoint, e.message);
-        return null;
+        return { url, ok: false, error: e.message };
     }
 }
 
-// ── Pending Queue (buffer saat internet putus sesaat) ─────────
-async function queuePesan(endpoint, payload) {
+// ── BROADCAST: kirim ke semua server aktif secara paralel ─────
+async function kirimKeServer(endpoint, payload = {}) {
+    const urls = await getActiveServerUrls();
+    const results = await Promise.all(urls.map(url => kirimSatu(url, endpoint, payload)));
+
+    const gagal = results.filter(r => !r.ok);
+    const berhasil = results.filter(r => r.ok);
+
+    if (berhasil.length > 0) {
+        console.log(`[QRIS BG] Terkirim ke ${berhasil.length} server:`, berhasil.map(r => r.url).join(', '));
+    }
+
+    // Queue ulang yang gagal
+    for (const item of gagal) {
+        console.warn(`[QRIS BG] Gagal kirim ke ${item.url}:`, item.error);
+        await queuePesan(endpoint, payload, item.url);
+    }
+
+    return results;
+}
+
+// ── GET dari server (pakai server pertama yang aktif) ─────────
+async function getFromServer(endpoint) {
+    const urls = await getActiveServerUrls();
+    for (const url of urls) {
+        try {
+            const res = await fetch(`${url}/${endpoint}`, {
+                method: 'GET',
+                headers: { 'X-Monitor-Key': API_KEY }
+            });
+            if (res.ok) return await res.json();
+        } catch {
+            // coba url berikutnya
+        }
+    }
+    return null;
+}
+
+// ── Pending Queue ─────────────────────────────────────────────
+async function queuePesan(endpoint, payload, targetUrl = null) {
     const { pendingQueue = [] } = await chrome.storage.local.get('pendingQueue');
-    pendingQueue.push({ endpoint, payload, queuedAt: Date.now() });
+    pendingQueue.push({ endpoint, payload, targetUrl, queuedAt: Date.now() });
     await chrome.storage.local.set({ pendingQueue });
 }
 
@@ -72,66 +161,61 @@ async function retryPendingQueue() {
     const { pendingQueue = [] } = await chrome.storage.local.get('pendingQueue');
     if (pendingQueue.length === 0) return;
 
-    const API_BASE = await getApiBase();
-    const berhasil = [];
     const gagalLagi = [];
 
     for (const item of pendingQueue) {
-        try {
-            const res = await fetch(`${API_BASE}/${item.endpoint}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'X-Monitor-Key': API_KEY },
-                body: JSON.stringify(item.payload)
-            });
-            if (res.ok) berhasil.push(item);
-            else gagalLagi.push(item);
-        } catch {
-            gagalLagi.push(item);
+        // Jika ada targetUrl spesifik, coba ke sana saja
+        // Jika tidak, broadcast ulang
+        const urls = item.targetUrl ? [item.targetUrl] : await getActiveServerUrls();
+        let berhasil = false;
+
+        for (const url of urls) {
+            try {
+                const res = await fetch(`${url}/${item.endpoint}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-Monitor-Key': API_KEY },
+                    body: JSON.stringify(item.payload)
+                });
+                if (res.ok) { berhasil = true; break; }
+            } catch { /* lanjut */ }
         }
+
+        if (!berhasil) gagalLagi.push(item);
     }
 
     await chrome.storage.local.set({ pendingQueue: gagalLagi });
-    if (berhasil.length > 0) console.log(`[QRIS BG] ${berhasil.length} pesan pending berhasil dikirim ulang`);
+    const terkirim = pendingQueue.length - gagalLagi.length;
+    if (terkirim > 0) console.log(`[QRIS BG] ${terkirim} pending berhasil dikirim ulang`);
 }
 
 // ── Listener dari content.js ──────────────────────────────────
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-
-    // Harus return true agar sendResponse bisa dipanggil async
     (async () => {
         switch (message.type) {
 
-            // Batch transaksi baru terdeteksi dari scraping DOM (multi-order support)
             case 'TRANSAKSI_BATCH': {
                 const batch = message.batch || [];
-                console.log(`[QRIS BG] Batch ${batch.length} transaksi baru diterima`);
+                console.log(`[QRIS BG] Batch ${batch.length} transaksi → broadcast ke semua server aktif`);
 
-                // Kirim batch ke server dalam satu request
-                const result = await kirimKeServer('transaksi-batch', {
-                    transaksi_list: batch
-                });
+                const results = await kirimKeServer('transaksi-batch', { transaksi_list: batch });
 
-                // Update storage untuk popup
                 if (batch.length > 0) {
                     await chrome.storage.local.set({
                         lastTransaksi: batch[0],
                         lastTransaksiTime: new Date().toISOString()
                     });
-
-                    // Increment counter harian
                     const { totalHariIni = 0 } = await chrome.storage.local.get('totalHariIni');
                     await chrome.storage.local.set({ totalHariIni: totalHariIni + batch.length });
                 }
 
-                sendResponse({ ok: true, result });
+                sendResponse({ ok: true, results });
                 break;
             }
 
-            // Backward-compat: single transaksi (lama)
             case 'TRANSAKSI_BARU': {
-                console.log('[QRIS BG] Transaksi baru diterima:', message.data?.nominal_raw);
+                console.log('[QRIS BG] Transaksi baru → broadcast ke semua server aktif');
 
-                const result = await kirimKeServer('transaksi', {
+                const results = await kirimKeServer('transaksi', {
                     transaksi: message.data,
                     konteks: message.semua
                 });
@@ -144,36 +228,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 const { totalHariIni = 0 } = await chrome.storage.local.get('totalHariIni');
                 await chrome.storage.local.set({ totalHariIni: totalHariIni + 1 });
 
-                sendResponse({ ok: true, result });
+                sendResponse({ ok: true, results });
                 break;
             }
 
-            // Session QRIS habis / logout
             case 'SESSION_EXPIRED': {
-                console.log('[QRIS BG] Session expired! Beritahu server...');
-
                 await kirimKeServer('session-expired', {});
                 await chrome.storage.local.set({ sessionStatus: 'expired' });
-
                 sendResponse({ ok: true });
                 break;
             }
 
-            // Berhasil login, monitor aktif kembali
             case 'SUDAH_LOGIN': {
-                console.log('[QRIS BG] Monitor aktif!');
-
                 await kirimKeServer('monitor-up', {});
                 await chrome.storage.local.set({
                     sessionStatus: 'active',
                     monitorStatus: 'online'
                 });
-
                 sendResponse({ ok: true });
                 break;
             }
 
-            // Content script minta tanya server: ada perintah?
             case 'CEK_PERINTAH': {
                 const serverResponse = await getFromServer('pending-commands');
                 const commandData = serverResponse?.data || { command: null };
@@ -181,75 +256,72 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 break;
             }
 
-            // Test Ping ke server tujuan
-            case 'PING_SERVER': {
-                console.log('[QRIS BG] Ping server...');
-                const API_BASE = await getApiBase();
-                const startTime = performance.now();
-                try {
-                    const res = await fetch(`${API_BASE}/ping`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-Monitor-Key': API_KEY
-                        },
-                        body: JSON.stringify({ ping: true, timestamp: new Date().toISOString() })
-                    });
-                    const endTime = performance.now();
-                    const latency = Math.round(endTime - startTime);
-
-                    if (res.ok) {
-                        let serverData = null;
-                        try { serverData = await res.json(); } catch { }
-                        sendResponse({
-                            ok: true,
-                            status: 'reachable',
-                            httpCode: res.status,
-                            latency,
-                            serverUrl: API_BASE,
-                            serverResponse: serverData,
-                            testedAt: new Date().toISOString()
-                        });
-                    } else {
-                        sendResponse({
-                            ok: false,
-                            status: 'error',
-                            httpCode: res.status,
-                            latency,
-                            serverUrl: API_BASE,
-                            error: `HTTP ${res.status} ${res.statusText}`,
-                            testedAt: new Date().toISOString()
-                        });
-                    }
-                } catch (e) {
-                    const endTime = performance.now();
-                    const latency = Math.round(endTime - startTime);
-                    sendResponse({
-                        ok: false,
-                        status: 'unreachable',
-                        latency,
-                        serverUrl: API_BASE,
-                        error: e.message,
-                        testedAt: new Date().toISOString()
-                    });
-                }
+            // Jalankan auto-detect manual dari popup
+            case 'AUTO_DETECT': {
+                console.log('[QRIS BG] Auto-detect dipicu manual...');
+                const reachability = await autoDetectServers();
+                sendResponse({ ok: true, reachability });
                 break;
             }
 
-            // Simpan konfigurasi server target dari popup
-            case 'SAVE_SERVER_TARGET': {
-                const target = message.target;
-                await chrome.storage.local.set({ serverTarget: target });
-                console.log('[QRIS BG] Server target disimpan:', target.mode, '→',
-                    target.mode === 'production' ? target.productionUrl : target.localUrl);
+            // Ping ke semua server, report hasilnya
+            case 'PING_SERVER': {
+                console.log('[QRIS BG] Ping broadcast ke semua server...');
+                const servers = await getServers();
+                const startTimes = {};
+                const pingResults = {};
+
+                const pings = [servers.local, servers.production].map(async (srv) => {
+                    const t0 = performance.now();
+                    startTimes[srv.id] = t0;
+                    try {
+                        const res = await fetch(`${srv.url}/ping`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'X-Monitor-Key': API_KEY },
+                            body: JSON.stringify({ ping: true, timestamp: new Date().toISOString() })
+                        });
+                        const latency = Math.round(performance.now() - t0);
+                        if (res.ok) {
+                            let data = null;
+                            try { data = await res.json(); } catch { }
+                            pingResults[srv.id] = { ok: true, latency, httpCode: res.status, url: srv.url, label: srv.label, serverData: data };
+                        } else {
+                            pingResults[srv.id] = { ok: false, latency, httpCode: res.status, url: srv.url, label: srv.label, error: `HTTP ${res.status}` };
+                        }
+                    } catch (e) {
+                        const latency = Math.round(performance.now() - startTimes[srv.id]);
+                        pingResults[srv.id] = { ok: false, latency, url: srv.url, label: srv.label, error: e.message };
+                    }
+                });
+
+                await Promise.all(pings);
+
+                // Update reachability berdasarkan hasil ping
+                await chrome.storage.local.set({
+                    serverReachability: {
+                        local: pingResults.local?.ok || false,
+                        production: pingResults.production?.ok || false
+                    }
+                });
+
+                sendResponse({ ok: true, results: pingResults, testedAt: new Date().toISOString() });
+                break;
+            }
+
+            // Simpan konfigurasi URL server
+            case 'SAVE_SERVER_CONFIG': {
+                const config = message.config;
+                await chrome.storage.local.set({ serverConfig: config });
+                console.log('[QRIS BG] Server config disimpan. Local:', config.local.url, '| Production:', config.production.url);
                 sendResponse({ ok: true });
                 break;
             }
 
-            // Ambil konfigurasi server target aktif
-            case 'GET_SERVER_TARGET': {
-                const { serverTarget } = await chrome.storage.local.get('serverTarget');
-                sendResponse({ ok: true, target: serverTarget || DEFAULT_TARGET });
+            // Ambil konfigurasi + status reachability
+            case 'GET_SERVER_STATUS': {
+                const servers = await getServers();
+                const { serverReachability } = await chrome.storage.local.get('serverReachability');
+                sendResponse({ ok: true, servers, reachability: serverReachability || null });
                 break;
             }
 
@@ -258,39 +330,36 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
     })();
 
-    return true; // keep channel open untuk async sendResponse
+    return true;
 });
 
-// ── Keepalive & Heartbeat ─────────────────────────────────────
+// ── Keepalive, Heartbeat & Auto-Detect Periodik ───────────────
 chrome.alarms.create('keepalive', { periodInMinutes: 1 });
+chrome.alarms.create('auto-detect', { periodInMinutes: 2 }); // cek ulang setiap 2 menit
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
     if (alarm.name === 'keepalive') {
         await kirimKeServer('heartbeat', {});
         await retryPendingQueue();
-        console.log('[QRIS BG] Heartbeat terkirim');
+        console.log('[QRIS BG] Heartbeat broadcast selesai');
+    }
+    if (alarm.name === 'auto-detect') {
+        await autoDetectServers();
     }
 });
 
-// ── Inisialisasi saat Service Worker pertama aktif ─────────────
+// ── Inisialisasi ──────────────────────────────────────────────
 (async () => {
-    // Reset harian counter jika hari sudah berganti
-    const { lastDate } = await chrome.storage.local.get(['lastDate', 'totalHariIni']);
+    const { lastDate } = await chrome.storage.local.get('lastDate');
     const today = new Date().toDateString();
     if (lastDate !== today) {
         await chrome.storage.local.set({ lastDate: today, totalHariIni: 0 });
     }
 
-    // Pastikan default server target tersimpan jika belum ada
-    const { serverTarget } = await chrome.storage.local.get('serverTarget');
-    if (!serverTarget) {
-        await chrome.storage.local.set({ serverTarget: DEFAULT_TARGET });
-        console.log('[QRIS BG] Default server target diset ke LOCAL');
-    }
-
-    // Set status awal
     await chrome.storage.local.set({ monitorStatus: 'starting' });
 
-    const apiBase = await getApiBase();
-    console.log('[QRIS BG] Service Worker aktif — Target:', apiBase);
+    // Auto-detect saat service worker pertama aktif
+    console.log('[QRIS BG] Service Worker aktif — mendeteksi server...');
+    await autoDetectServers();
+    console.log('[QRIS BG] Siap. Mode: DUAL BROADCAST');
 })();

@@ -1,26 +1,19 @@
 // ============================================================
-// POPUP JS — QRIS Payment Monitor
+// POPUP JS — QRIS Payment Monitor (Dual Broadcast Mode)
 // ============================================================
 
 const QRIS_HISTORI_URL = 'https://merchant.qris.interactive.co.id/v2/m/kontenr.php?idir=pages/historytrx.php';
 
-// Default target (sync dgn background.js)
-const DEFAULT_TARGET = {
-    mode: 'local',
-    localUrl: 'http://192.168.1.12:8000/api/qris',
-    productionUrl: 'https://alpakyros.com/api/qris'
+const DEFAULT_SERVERS = {
+    local: { url: 'http://192.168.1.12:8000/api/qris' },
+    production: { url: 'https://alpakyros.com/api/qris' }
 };
 
-// ─── State ────────────────────────────────────────────────────
-let currentTarget = { ...DEFAULT_TARGET };
-
-// Format rupiah dari integer
+// ─── Format helpers ───────────────────────────────────────────
 function formatRupiah(angka) {
     if (!angka) return '—';
     return 'Rp ' + parseInt(angka).toLocaleString('id-ID');
 }
-
-// Format waktu relatif
 function formatWaktu(isoStr) {
     if (!isoStr) return '—';
     const d = new Date(isoStr);
@@ -28,18 +21,12 @@ function formatWaktu(isoStr) {
         ' — ' + d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
 }
 
-// Hitung URL aktif dari target
-function getActiveUrl(target) {
-    return target.mode === 'production' ? target.productionUrl : target.localUrl;
-}
-
-// ─── Update UI Status ─────────────────────────────────────────
+// ─── Update status bar ────────────────────────────────────────
 function updateUI(data) {
     const dot = document.getElementById('statusDot');
-
-    // Monitor status
     const monitorEl = document.getElementById('monitorStatus');
     const mon = data.monitorStatus || 'offline';
+
     if (mon === 'online' || mon === 'starting') {
         monitorEl.textContent = '✅ Online';
         monitorEl.style.color = '#00e676';
@@ -50,7 +37,6 @@ function updateUI(data) {
         dot.className = 'status-dot offline';
     }
 
-    // Session status
     const sessionEl = document.getElementById('sessionStatus');
     const sess = data.sessionStatus || 'unknown';
     if (sess === 'active') {
@@ -65,10 +51,8 @@ function updateUI(data) {
         sessionEl.style.color = '';
     }
 
-    // Total hari ini
     document.getElementById('totalHariIni').textContent = data.totalHariIni || 0;
 
-    // Transaksi terakhir
     if (data.lastTransaksi) {
         const t = data.lastTransaksi;
         document.getElementById('lastTrxCard').style.display = 'block';
@@ -78,114 +62,145 @@ function updateUI(data) {
         document.getElementById('lastTime').textContent = t.waktu || '—';
     }
 
-    // Last update
     document.getElementById('lastUpdate').textContent =
         data.lastTransaksiTime ? 'Update ' + formatWaktu(data.lastTransaksiTime) : 'Belum ada data';
 }
 
-// ─── Update UI Setting Panel ──────────────────────────────────
-function updateSettingPanel(target) {
-    const mode = target.mode || 'local';
-    const isProduction = mode === 'production';
+// ─── Update panel status server ───────────────────────────────
+function updateServerStatus(servers, reachability) {
+    const serverList = [
+        { id: 'local', label: 'Local 🏠' },
+        { id: 'production', label: 'Production 🌐' }
+    ];
 
-    // Toggle button active state
-    document.getElementById('btnModeLocal').classList.toggle('active', !isProduction);
-    document.getElementById('btnModeProduction').classList.toggle('active', isProduction);
+    let activeCount = 0;
 
-    // Show/hide input groups
-    document.getElementById('groupLocal').style.display = isProduction ? 'none' : 'block';
-    document.getElementById('groupProduction').style.display = isProduction ? 'block' : 'none';
+    for (const srv of serverList) {
+        const dot = document.getElementById(`dot${capitalize(srv.id)}`);
+        const state = document.getElementById(`state${capitalize(srv.id)}`);
+        const urlEl = document.getElementById(`url${capitalize(srv.id)}`);
+        const row = document.getElementById(`row${capitalize(srv.id)}`);
 
-    // Fill inputs
-    document.getElementById('inputLocalUrl').value = target.localUrl || DEFAULT_TARGET.localUrl;
-    document.getElementById('inputProductionUrl').value = target.productionUrl || DEFAULT_TARGET.productionUrl;
+        const url = servers?.[srv.id]?.url || DEFAULT_SERVERS[srv.id].url;
+        urlEl.textContent = url;
+        urlEl.title = url;
 
-    // Update mode badge & active server display
-    const badge = document.getElementById('modeBadge');
-    const activeUrl = document.getElementById('activeServerUrl');
-    const activeUrlText = getActiveUrl(target);
-
-    if (isProduction) {
-        badge.textContent = 'PRODUCTION';
-        badge.className = 'mode-badge production';
-    } else {
-        badge.textContent = 'LOCAL';
-        badge.className = 'mode-badge local';
+        if (!reachability) {
+            // Belum ada data deteksi
+            dot.className = 'server-dot unknown';
+            state.textContent = '?';
+            state.style.color = '';
+            row.className = 'server-row';
+        } else if (reachability[srv.id]) {
+            dot.className = 'server-dot online';
+            state.textContent = '✅ Aktif';
+            state.style.color = '#00e676';
+            row.className = 'server-row active';
+            activeCount++;
+        } else {
+            dot.className = 'server-dot offline';
+            state.textContent = '🔴 Offline';
+            state.style.color = '#ff5252';
+            row.className = 'server-row';
+        }
     }
 
-    activeUrl.textContent = activeUrlText;
-    activeUrl.title = activeUrlText;
+    // Update broadcast badge
+    const badge = document.getElementById('broadcastBadge');
+    if (!reachability) {
+        badge.textContent = 'DETEKSI...';
+        badge.className = 'broadcast-badge unknown';
+    } else if (activeCount === 2) {
+        badge.textContent = '⚡ DUAL BROADCAST';
+        badge.className = 'broadcast-badge dual';
+    } else if (activeCount === 1) {
+        badge.textContent = '▶ SINGLE';
+        badge.className = 'broadcast-badge single';
+    } else {
+        badge.textContent = '✗ NO SERVER';
+        badge.className = 'broadcast-badge offline';
+    }
+}
 
-    currentTarget = { ...target };
+function capitalize(str) {
+    return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
 // ─── Load data dari storage ───────────────────────────────────
 async function loadData() {
     const data = await chrome.storage.local.get([
-        'monitorStatus',
-        'sessionStatus',
-        'totalHariIni',
-        'lastTransaksi',
-        'lastTransaksiTime'
+        'monitorStatus', 'sessionStatus', 'totalHariIni',
+        'lastTransaksi', 'lastTransaksiTime'
     ]);
     updateUI(data);
 }
 
-async function loadServerTarget() {
+async function loadServerStatus() {
     try {
-        const result = await chrome.runtime.sendMessage({ type: 'GET_SERVER_TARGET' });
+        const result = await chrome.runtime.sendMessage({ type: 'GET_SERVER_STATUS' });
         if (result && result.ok) {
-            updateSettingPanel(result.target);
-        } else {
-            updateSettingPanel(DEFAULT_TARGET);
+            updateServerStatus(result.servers, result.reachability);
+            // Isi input URL dari config
+            const lUrl = result.servers?.local?.url || DEFAULT_SERVERS.local.url;
+            const pUrl = result.servers?.production?.url || DEFAULT_SERVERS.production.url;
+            document.getElementById('inputLocalUrl').value = lUrl;
+            document.getElementById('inputProductionUrl').value = pUrl;
         }
     } catch {
-        updateSettingPanel(DEFAULT_TARGET);
+        updateServerStatus(null, null);
     }
 }
 
-// ─── Mode Toggle ──────────────────────────────────────────────
-document.getElementById('btnModeLocal').addEventListener('click', () => {
-    currentTarget.mode = 'local';
-    updateSettingPanel(currentTarget);
+// ─── Tombol Deteksi Ulang ─────────────────────────────────────
+document.getElementById('btnDetect').addEventListener('click', async () => {
+    const btn = document.getElementById('btnDetect');
+    btn.disabled = true;
+    btn.textContent = '⏳ Mendeteksi...';
+    updateServerStatus(null, null);
+
+    try {
+        const result = await chrome.runtime.sendMessage({ type: 'AUTO_DETECT' });
+        if (result && result.ok) {
+            await loadServerStatus();
+        }
+    } catch (e) {
+        console.error(e);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🔍 Deteksi Ulang Server';
+    }
 });
 
-document.getElementById('btnModeProduction').addEventListener('click', () => {
-    currentTarget.mode = 'production';
-    updateSettingPanel(currentTarget);
-});
-
-// ─── Simpan Target ────────────────────────────────────────────
-document.getElementById('btnSaveTarget').addEventListener('click', async () => {
-    const btn = document.getElementById('btnSaveTarget');
+// ─── Simpan konfigurasi URL ───────────────────────────────────
+document.getElementById('btnSaveConfig').addEventListener('click', async () => {
+    const btn = document.getElementById('btnSaveConfig');
     const feedback = document.getElementById('saveFeedback');
 
     const localUrl = document.getElementById('inputLocalUrl').value.trim();
     const productionUrl = document.getElementById('inputProductionUrl').value.trim();
 
-    // Validasi URL dasar
-    const urlDipakai = currentTarget.mode === 'production' ? productionUrl : localUrl;
-    if (!urlDipakai) {
+    if (!localUrl || !productionUrl) {
         feedback.textContent = '⚠️ URL tidak boleh kosong';
         feedback.className = 'save-feedback error';
         return;
     }
 
-    const newTarget = {
-        mode: currentTarget.mode,
-        localUrl: localUrl || DEFAULT_TARGET.localUrl,
-        productionUrl: productionUrl || DEFAULT_TARGET.productionUrl
+    const config = {
+        local: { id: 'local', label: 'Local 🏠', url: localUrl, enabled: true },
+        production: { id: 'production', label: 'Production 🌐', url: productionUrl, enabled: true }
     };
 
     btn.disabled = true;
     btn.textContent = '⏳ Menyimpan...';
 
     try {
-        const result = await chrome.runtime.sendMessage({ type: 'SAVE_SERVER_TARGET', target: newTarget });
+        const result = await chrome.runtime.sendMessage({ type: 'SAVE_SERVER_CONFIG', config });
         if (result && result.ok) {
-            updateSettingPanel(newTarget);
-            feedback.textContent = `✅ Disimpan! Aktif: ${newTarget.mode === 'production' ? 'Production 🌐' : 'Local 🏠'}`;
+            feedback.textContent = '✅ URL disimpan! Mendeteksi ulang...';
             feedback.className = 'save-feedback success';
+            // Auto-detect setelah simpan
+            await chrome.runtime.sendMessage({ type: 'AUTO_DETECT' });
+            await loadServerStatus();
         } else {
             feedback.textContent = '❌ Gagal menyimpan';
             feedback.className = 'save-feedback error';
@@ -195,78 +210,64 @@ document.getElementById('btnSaveTarget').addEventListener('click', async () => {
         feedback.className = 'save-feedback error';
     } finally {
         btn.disabled = false;
-        btn.textContent = '💾 Simpan & Terapkan';
+        btn.textContent = '💾 Simpan URL';
         setTimeout(() => { feedback.textContent = ''; feedback.className = 'save-feedback'; }, 4000);
     }
 });
 
-// ─── Tombol buka halaman QRIS ─────────────────────────────────
-document.getElementById('btnBukaQris').addEventListener('click', () => {
-    chrome.tabs.create({ url: QRIS_HISTORI_URL });
-    window.close();
-});
-
-// ─── Tombol refresh data popup ────────────────────────────────
-document.getElementById('btnRefresh').addEventListener('click', () => {
-    loadData();
-    loadServerTarget();
-});
-
-// ─── Tombol Test Ping Server ──────────────────────────────────
+// ─── Ping Semua Server ────────────────────────────────────────
 document.getElementById('btnPing').addEventListener('click', async () => {
     const btn = document.getElementById('btnPing');
     const card = document.getElementById('pingResultCard');
-    const statusEl = document.getElementById('pingStatus');
-    const latencyEl = document.getElementById('pingLatency');
-    const metaEl = document.getElementById('pingMeta');
+    const body = document.getElementById('pingResultBody');
 
-    // Loading state
     btn.disabled = true;
-    btn.textContent = '⏳ Menguji koneksi...';
+    btn.textContent = '⏳ Ping semua server...';
     card.style.display = 'block';
-    statusEl.textContent = '⏳ Mengirim ping...';
-    statusEl.style.color = '';
-    latencyEl.textContent = '';
-    metaEl.textContent = '';
+    body.innerHTML = '<div class="ping-row">⏳ Mengirim ping ke semua server...</div>';
 
     try {
         const result = await chrome.runtime.sendMessage({ type: 'PING_SERVER' });
 
         if (result && result.ok) {
-            statusEl.textContent = '✅ Server Terjangkau';
-            statusEl.style.color = '#00e676';
-            latencyEl.textContent = `⚡ ${result.latency}ms (HTTP ${result.httpCode})`;
-            latencyEl.style.color = result.latency < 300 ? '#00e676' : result.latency < 1000 ? '#ffd740' : '#ff5252';
-        } else if (result && result.status === 'error') {
-            statusEl.textContent = `⚠️ Server Error`;
-            statusEl.style.color = '#ffd740';
-            latencyEl.textContent = `${result.latency}ms — ${result.error}`;
-            latencyEl.style.color = '#ffd740';
-        } else if (result && result.status === 'unreachable') {
-            statusEl.textContent = '🔴 Server Tidak Terjangkau';
-            statusEl.style.color = '#ff5252';
-            latencyEl.textContent = result.error || 'Connection failed';
-            latencyEl.style.color = '#ff5252';
-        } else {
-            statusEl.textContent = '❓ Respon tidak diketahui';
-            statusEl.style.color = '#ffd740';
-        }
+            const rows = Object.values(result.results).map(r => {
+                const color = r.ok ? '#00e676' : '#ff5252';
+                const status = r.ok ? '✅' : '🔴';
+                const latency = r.latency !== undefined ? `${r.latency}ms` : '—';
+                const http = r.httpCode ? ` (HTTP ${r.httpCode})` : '';
+                const err = r.error ? `<br><span style="font-size:10px;color:#ff5252">${r.error}</span>` : '';
+                return `<div class="ping-row">
+                    <span style="color:${color};font-weight:700">${status} ${r.label}</span>
+                    <span class="ping-latency-inline">${latency}${http}</span>
+                    <div class="ping-url">${r.url}</div>${err}
+                </div>`;
+            }).join('');
+            body.innerHTML = rows;
 
-        if (result && result.serverUrl) {
-            metaEl.textContent = `${result.serverUrl} • ${formatWaktu(result.testedAt)}`;
+            // Update reachability di panel server juga
+            await loadServerStatus();
+        } else {
+            body.innerHTML = '<div class="ping-row" style="color:#ff5252">❌ Gagal ping</div>';
         }
     } catch (e) {
-        statusEl.textContent = '🔴 Gagal mengirim ping';
-        statusEl.style.color = '#ff5252';
-        latencyEl.textContent = e.message;
-        latencyEl.style.color = '#ff5252';
-        metaEl.textContent = '';
+        body.innerHTML = `<div class="ping-row" style="color:#ff5252">❌ ${e.message}</div>`;
     } finally {
         btn.disabled = false;
-        btn.textContent = '📡 Test Ping Server';
+        btn.textContent = '📡 Ping Semua Server';
     }
 });
 
-// ─── Load saat popup dibuka ───────────────────────────────────
+// ─── Buka QRIS & Refresh ──────────────────────────────────────
+document.getElementById('btnBukaQris').addEventListener('click', () => {
+    chrome.tabs.create({ url: QRIS_HISTORI_URL });
+    window.close();
+});
+
+document.getElementById('btnRefresh').addEventListener('click', () => {
+    loadData();
+    loadServerStatus();
+});
+
+// ─── Init ─────────────────────────────────────────────────────
 loadData();
-loadServerTarget();
+loadServerStatus();

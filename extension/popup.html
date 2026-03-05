@@ -13,9 +13,10 @@
   <div class="header">
     <div class="status-dot" id="statusDot"></div>
     <span class="header-title">QRIS Payment Monitor</span>
-    <span class="mode-badge" id="modeBadge">LOCAL</span>
+    <span class="broadcast-badge" id="broadcastBadge">—</span>
   </div>
 
+  <!-- Status Transaksi & Session -->
   <div class="card">
     <div class="row">
       <span class="label">Monitor</span>
@@ -29,12 +30,30 @@
       <span class="label">Transaksi hari ini</span>
       <span class="value highlight" id="totalHariIni">0</span>
     </div>
-    <div class="row">
-      <span class="label">Server Aktif</span>
-      <span class="value server-url-display" id="activeServerUrl">—</span>
+  </div>
+
+  <!-- Status Dual Server -->
+  <div class="card server-status-card">
+    <div class="card-label">📡 Status Server (Auto Broadcast)</div>
+    <div class="server-row" id="rowLocal">
+      <div class="server-dot" id="dotLocal"></div>
+      <div class="server-info">
+        <span class="server-name">Local 🏠</span>
+        <span class="server-addr" id="urlLocal">—</span>
+      </div>
+      <span class="server-state" id="stateLocal">—</span>
+    </div>
+    <div class="server-row" id="rowProduction">
+      <div class="server-dot" id="dotProduction"></div>
+      <div class="server-info">
+        <span class="server-name">Production 🌐</span>
+        <span class="server-addr" id="urlProduction">—</span>
+      </div>
+      <span class="server-state" id="stateProduction">—</span>
     </div>
   </div>
 
+  <!-- Transaksi Terakhir -->
   <div class="card last-trx" id="lastTrxCard" style="display:none">
     <div class="card-label">Transaksi Terakhir</div>
     <div class="trx-nominal" id="lastNominal">—</div>
@@ -45,48 +64,39 @@
     <div class="trx-time" id="lastTime">—</div>
   </div>
 
-  <!-- ── Panel Server Target ────────────────────────────────── -->
+  <!-- Konfigurasi URL Server -->
   <div class="card server-settings">
-    <div class="card-label">🎯 Server Target</div>
+    <div class="card-label">⚙️ Konfigurasi URL</div>
 
-    <div class="mode-toggle">
-      <button class="mode-btn" id="btnModeLocal" data-mode="local">
-        🏠 Local
-      </button>
-      <button class="mode-btn" id="btnModeProduction" data-mode="production">
-        🌐 Production
-      </button>
-    </div>
-
-    <div class="setting-group" id="groupLocal">
-      <label class="setting-label">URL Local (IP:PORT)</label>
+    <div class="setting-group">
+      <label class="setting-label">Local URL</label>
       <input type="text" id="inputLocalUrl" class="setting-input" placeholder="http://192.168.x.x:8000/api/qris" />
     </div>
-
-    <div class="setting-group" id="groupProduction">
-      <label class="setting-label">URL Production (Hosting)</label>
+    <div class="setting-group">
+      <label class="setting-label">Production URL</label>
       <input type="text" id="inputProductionUrl" class="setting-input" placeholder="https://alpakyros.com/api/qris" />
     </div>
 
-    <button id="btnSaveTarget" class="btn btn-save">💾 Simpan &amp; Terapkan</button>
+    <button id="btnSaveConfig" class="btn btn-save">💾 Simpan URL</button>
     <div class="save-feedback" id="saveFeedback"></div>
   </div>
 
+  <!-- Aksi -->
   <div class="actions">
     <button id="btnBukaQris" class="btn btn-primary">🔗 Buka Halaman QRIS</button>
-    <button id="btnPing" class="btn btn-ping">📡 Test Ping Server</button>
+    <button id="btnDetect" class="btn btn-detect">🔍 Deteksi Ulang Server</button>
+    <button id="btnPing" class="btn btn-ping">📡 Ping Semua Server</button>
     <button id="btnRefresh" class="btn btn-secondary">🔄 Refresh Data</button>
   </div>
 
+  <!-- Hasil Ping -->
   <div class="card ping-result" id="pingResultCard" style="display:none">
     <div class="card-label">Hasil Ping</div>
-    <div class="ping-status" id="pingStatus">—</div>
-    <div class="ping-latency" id="pingLatency">—</div>
-    <div class="ping-meta" id="pingMeta">—</div>
+    <div id="pingResultBody"></div>
   </div>
 
   <div class="footer">
-    v1.0.0 &bull; <span id="lastUpdate">—</span>
+    v1.1.0 &bull; <span id="lastUpdate">—</span>
   </div>
 
   <script src="popup.js"></script>

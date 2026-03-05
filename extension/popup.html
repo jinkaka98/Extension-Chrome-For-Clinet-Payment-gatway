@@ -16,22 +16,26 @@
     <span class="broadcast-badge" id="broadcastBadge">—</span>
   </div>
 
-  <!-- Status Transaksi & Session + Last Transaksi: berdampingan -->
-  <div class="two-col-cards">
+  <div class="tabs">
+    <button id="tabMonitor" class="tab-btn active">📊 Monitoring</button>
+    <button id="tabSettings" class="tab-btn">⚙️ Pengaturan</button>
+  </div>
+
+  <!-- TAB MONITORING -->
+  <div id="viewMonitor" class="view-content active">
+    <!-- Status Transaksi & Session -->
     <div class="card">
-      <div class="row-grid">
-        <div class="row">
-          <span class="label">Monitor</span>
-          <span class="value" id="monitorStatus">—</span>
-        </div>
-        <div class="row">
-          <span class="label">Session</span>
-          <span class="value" id="sessionStatus">—</span>
-        </div>
-        <div class="row">
-          <span class="label">Trx hari ini</span>
-          <span class="value highlight" id="totalHariIni">0</span>
-        </div>
+      <div class="row">
+        <span class="label">Monitor</span>
+        <span class="value" id="monitorStatus">—</span>
+      </div>
+      <div class="row">
+        <span class="label">Session QRIS</span>
+        <span class="value" id="sessionStatus">—</span>
+      </div>
+      <div class="row">
+        <span class="label">Transaksi hari ini</span>
+        <span class="value highlight" id="totalHariIni">0</span>
       </div>
     </div>
 
@@ -45,31 +49,47 @@
       </div>
       <div class="trx-time" id="lastTime">—</div>
     </div>
+
+    <!-- Status Dual Server -->
+    <div class="card server-status-card">
+      <div class="card-label">📡 Status Server (Auto Broadcast)</div>
+      <div class="server-rows-grid">
+        <div class="server-row" id="rowLocal">
+          <div class="server-dot" id="dotLocal"></div>
+          <div class="server-info">
+            <span class="server-name">Local 🏠</span>
+            <span class="server-addr" id="urlLocal">—</span>
+          </div>
+          <span class="server-state" id="stateLocal">—</span>
+        </div>
+        <div class="server-row" id="rowProduction">
+          <div class="server-dot" id="dotProduction"></div>
+          <div class="server-info">
+            <span class="server-name">Production 🌐</span>
+            <span class="server-addr" id="urlProduction">—</span>
+          </div>
+          <span class="server-state" id="stateProduction">—</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Aksi Monitoring -->
+    <div class="actions">
+      <button id="btnBukaQris" class="btn btn-primary">🔗 Buka Halaman QRIS</button>
+      <button id="btnDetect" class="btn btn-detect">🔍 Deteksi Ulang Server</button>
+      <button id="btnPing" class="btn btn-ping">📡 Ping Semua Server</button>
+      <button id="btnRefresh" class="btn btn-secondary">🔄 Refresh Data</button>
+    </div>
+
+    <!-- Hasil Ping -->
+    <div class="card ping-result" id="pingResultCard" style="display:none">
+      <div class="card-label">Hasil Ping</div>
+      <div id="pingResultBody"></div>
+    </div>
   </div>
 
-  <!-- Status Dual Server -->
-  <div class="card server-status-card">
-    <div class="card-label">📡 Status Server (Auto Broadcast)</div>
-    <div class="server-row" id="rowLocal">
-      <div class="server-dot" id="dotLocal"></div>
-      <div class="server-info">
-        <span class="server-name">Local 🏠</span>
-        <span class="server-addr" id="urlLocal">—</span>
-      </div>
-      <span class="server-state" id="stateLocal">—</span>
-    </div>
-    <div class="server-row" id="rowProduction">
-      <div class="server-dot" id="dotProduction"></div>
-      <div class="server-info">
-        <span class="server-name">Production 🌐</span>
-        <span class="server-addr" id="urlProduction">—</span>
-      </div>
-      <span class="server-state" id="stateProduction">—</span>
-    </div>
-  </div>
-
-  <!-- Konfigurasi URL + Timing: berdampingan -->
-  <div class="settings-row">
+  <!-- TAB PENGATURAN -->
+  <div id="viewSettings" class="view-content" style="display:none">
     <!-- Konfigurasi URL Server -->
     <div class="card server-settings">
       <div class="card-label">⚙️ URL Server</div>
@@ -88,12 +108,12 @@
     </div>
 
     <!-- Pengaturan Waktu -->
-    <div class="card server-settings">
+    <div class="card server-settings" style="margin-top: 10px;">
       <div class="card-label">⏱ Waktu Reload</div>
 
       <div class="timing-grid">
         <div class="timing-item">
-          <label class="setting-label">Scrape tiap</label>
+          <label class="setting-label">Scrape tiap (detik)</label>
           <div class="timing-input-row">
             <input type="number" id="inputPollSec" class="setting-input timing-input" min="2" max="60" value="5" />
             <span class="timing-unit">dtk</span>
@@ -102,7 +122,7 @@
         </div>
 
         <div class="timing-item">
-          <label class="setting-label">Reload idle</label>
+          <label class="setting-label">Reload idle (menit)</label>
           <div class="timing-input-row">
             <input type="number" id="inputReloadNoTrxMin" class="setting-input timing-input" min="1" max="60"
               value="14" />
@@ -112,7 +132,7 @@
         </div>
 
         <div class="timing-item">
-          <label class="setting-label">Delay trx</label>
+          <label class="setting-label">Delay trx (detik)</label>
           <div class="timing-input-row">
             <input type="number" id="inputReloadAfterTrxSec" class="setting-input timing-input" min="0" max="300"
               value="30" />
@@ -122,33 +142,19 @@
         </div>
 
         <div class="timing-item">
-          <label class="setting-label">Min. jeda</label>
+          <label class="setting-label">Min. jeda (detik)</label>
           <div class="timing-input-row">
             <input type="number" id="inputMinReloadGapSec" class="setting-input timing-input" min="10" max="120"
               value="25" />
             <span class="timing-unit">dtk</span>
           </div>
-          <div class="timing-hint">Anti-spam</div>
+          <div class="timing-hint">Anti-spam reload</div>
         </div>
       </div>
 
-      <button id="btnSaveTiming" class="btn btn-save" style="margin-top:8px">⏱ Simpan</button>
+      <button id="btnSaveTiming" class="btn btn-save" style="margin-top:8px">⏱ Simpan Waktu</button>
       <div class="save-feedback" id="timingFeedback"></div>
     </div>
-  </div>
-
-  <!-- Aksi -->
-  <div class="actions">
-    <button id="btnBukaQris" class="btn btn-primary">🔗 Buka Halaman QRIS</button>
-    <button id="btnDetect" class="btn btn-detect">🔍 Deteksi Ulang Server</button>
-    <button id="btnPing" class="btn btn-ping">📡 Ping Semua Server</button>
-    <button id="btnRefresh" class="btn btn-secondary">🔄 Refresh Data</button>
-  </div>
-
-  <!-- Hasil Ping -->
-  <div class="card ping-result" id="pingResultCard" style="display:none">
-    <div class="card-label">Hasil Ping</div>
-    <div id="pingResultBody"></div>
   </div>
 
   <div class="footer">

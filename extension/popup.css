@@ -29,33 +29,50 @@ body {
   font-family: 'Inter', sans-serif;
   background: var(--bg);
   color: var(--text);
-  width: 420px;
+  width: 340px;
   min-height: 200px;
   padding: 0 0 8px;
   font-size: 13px;
 }
 
-/* Layout dua kolom untuk cards */
-.two-col-cards {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0 8px;
-  padding: 8px 10px 0;
+/* ── Tabs ─────────────────────────────────────────────── */
+.tabs {
+  display: flex;
+  margin: 0 10px 8px;
+  background: var(--surface);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  overflow: hidden;
 }
 
-.two-col-cards .card {
-  margin: 0;
+.tab-btn {
+  flex: 1;
+  background: transparent;
+  color: var(--muted);
+  border: none;
+  padding: 8px 0;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
 }
 
-/* Jika card last-trx hidden, kolom pertama melebar penuh */
-.two-col-cards .card[style*="display:none"],
-.two-col-cards .card[style*="display: none"] {
-  display: none !important;
-  grid-column: unset;
+.tab-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
 }
 
-.two-col-cards:has(.card:only-child) {
-  grid-template-columns: 1fr;
+.tab-btn.active {
+  background: rgba(124, 58, 237, 0.15);
+  color: var(--primary);
+  box-shadow: inset 0 -2px 0 var(--primary);
+}
+
+.view-content {
+  display: none;
+}
+
+.view-content.active {
+  display: block;
 }
 
 /* ── Header ────────────────────────────────────────────── */
@@ -143,24 +160,7 @@ body {
   padding: 4px 0;
 }
 
-/* Row info 2 kolom di dalam card */
-.row-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-}
-
-.row-grid .row {
-  border-top: none !important;
-}
-
-.row-grid .row:nth-child(n+3) {
-  border-top: 1px solid var(--border) !important;
-}
-
-.row-grid .row:nth-child(2n) {
-  border-left: 1px solid var(--border);
-}
-
+/* Row info biasa (vertikal satu kolom) */
 .row {
   display: flex;
   justify-content: space-between;
@@ -208,13 +208,13 @@ body {
 .server-row {
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 6px 10px;
+  gap: 8px;
+  padding: 6px 12px;
   transition: background 0.2s;
 }
 
-.server-rows-grid .server-row:last-child {
-  border-left: 1px solid var(--border);
+.server-row+.server-row {
+  border-top: 1px solid var(--border);
 }
 
 .server-row.active {
@@ -299,17 +299,6 @@ body {
   padding: 8px 12px !important;
 }
 
-/* Dua setting card berdampingan */
-.settings-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  padding: 8px 10px 0;
-}
-
-.settings-row .card {
-  margin: 0;
-}
 
 .setting-group {
   margin-bottom: 7px;

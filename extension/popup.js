@@ -326,6 +326,18 @@ document.getElementById('btnSaveTiming').addEventListener('click', async () => {
     }
 });
 
+// ─── Tab Navigation ─────────────────────────────────────────────
+document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.view-content').forEach(c => c.classList.remove('active'));
+
+        btn.classList.add('active');
+        const targetId = btn.id === 'tabMonitor' ? 'viewMonitor' : 'viewSettings';
+        document.getElementById(targetId).classList.add('active');
+    });
+});
+
 // ─── Init ─────────────────────────────────────────────────────
 loadData();
 loadServerStatus();

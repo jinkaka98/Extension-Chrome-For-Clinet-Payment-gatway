@@ -3,39 +3,53 @@
 // Berjalan di dalam tab merchant.qris.interactive.co.id
 // =============================================================
 
-const CONFIG = {
+// ── Default CONFIG (bisa dioverride dari popup via storage) ────
+const CONFIG_DEFAULT = {
     // URL patterns
     URL_LOGIN: '/v2/m/login/',
     URL_VERIFIKASI: 'verification.php',
     URL_HISTORI: 'historytrx.php',
     URL_REDIRECT: 'https://merchant.qris.interactive.co.id/v2/m/kontenr.php?idir=pages/historytrx.php',
 
-    // Polling
-    POLL_INTERVAL_MS: 5000,   // scrape tabel setiap 5 detik
-    COMMAND_POLL_INTERVAL_MS: 30000,  // tanya server ada perintah? setiap ~30 detik
-    COMMAND_JITTER_MS: 2000,   // jitter ±2 detik pada command poll
+    // Polling (dapat diubah dari popup)
+    POLL_INTERVAL_MS: 5000,          // interval scrape tabel
+    COMMAND_POLL_INTERVAL_MS: 30000, // interval tanya server
+    COMMAND_JITTER_MS: 2000,
 
-    // Reload anti-bot
-    RELOAD_BEFORE_MIN: 14,     // reload sebelum 15 menit (14 menit)
-    RELOAD_JITTER_MS: 60000,  // ±60 detik jitter pada auto-reload
-    MIN_RELOAD_GAP_MS: 25000,  // minimal 25 detik antar dua reload
+    // Reload (dapat diubah dari popup)
+    RELOAD_NO_TRX_MIN: 14,    // reload jika TIDAK ada transaksi baru selama X menit
+    RELOAD_AFTER_TRX_MS: 30000, // reload setelah ada transaksi, tunggu X ms dulu
+    RELOAD_JITTER_MS: 60000,
+    MIN_RELOAD_GAP_MS: 25000,
 
-    // Selector tabel — sesuaikan jika struktur DOM berubah
+    // Selector DOM
     TABLE_ROW_SELECTOR: 'table tbody tr',
-    // DataTables menambah 2 hidden cols (raw nominal [3], sort [4])
-    // Total 13 kolom: No[0] Waktu[1] Nominal[2] RawNom[3] Sort[4] Status[5]
-    //   Nama[6] Metode[7] RRN[8] Keterangan[9] IDTransaksi[10] IDInvoice[11] Settlement[12]
     COL: {
-        WAKTU: 1,      // td[1]: tanggal & waktu transaksi
-        NOMINAL: 2,    // td[2]: "Rp 1.665" → parseNominal → 1665
-        STATUS: 5,     // td[5]: "Sukses" (shifted +2 dari visual karena hidden cols)
-        NAMA: 6,       // td[6]: nama pengirim
-        METODE: 7,     // td[7]: metode pembayaran (Dana, GoPay, dll)
-        RRN: 8,        // td[8]: RRN
-        KODE_REF: 9,   // td[9]: keterangan
-        UID_HASH: 10,  // td[10]: ID Transaksi (hash unik untuk dedup)
+        WAKTU: 1, NOMINAL: 2, STATUS: 5,
+        NAMA: 6, METODE: 7, RRN: 8,
+        KODE_REF: 9, UID_HASH: 10,
     }
 };
+
+// CONFIG aktif — diisi dari storage, lalu merge dengan default
+let CONFIG = { ...CONFIG_DEFAULT };
+
+// Load timing config dari storage
+async function loadTimingConfig() {
+    try {
+        const { timingConfig } = await chrome.storage.local.get('timingConfig');
+        if (timingConfig) {
+            CONFIG = { ...CONFIG_DEFAULT, ...timingConfig };
+            log('Timing config dimuat:', {
+                poll: CONFIG.POLL_INTERVAL_MS + 'ms',
+                reloadNoTrx: CONFIG.RELOAD_NO_TRX_MIN + ' menit',
+                reloadAfterTrx: CONFIG.RELOAD_AFTER_TRX_MS + 'ms'
+            });
+        }
+    } catch {
+        // Gunakan default jika storage tidak bisa diakses
+    }
+}
 
 // ── State ──────────────────────────────────────────────────────
 const knownUids = new Set();   // Set uid transaksi yang sudah dikirim
@@ -43,6 +57,7 @@ let pollingTimer = null;
 let commandTimer = null;
 let reloadCheckTimer = null;
 let lastReloadTime = Date.now();
+let lastTrxTime = null;   // waktu terakhir ada transaksi baru
 let lastUrl = window.location.href;
 let reloadQueue = [];
 let isProcessingQueue = false;
@@ -204,11 +219,25 @@ function scrapeTransaksi() {
     log(`${baruList.length} transaksi baru dikirim ke server (total known: ${knownUids.size})`,
         baruList.map(t => `${t.nominal_raw} [${t.uid_hash.substring(0, 8)}]`));
 
+    // Tandai waktu transaksi terakhir
+    lastTrxTime = Date.now();
+
     // Kirim BATCH ke background.js — semua transaksi baru sekaligus
     chrome.runtime.sendMessage({
         type: 'TRANSAKSI_BATCH',
         batch: baruList
     });
+
+    // Jika ada transaksi baru, reload halaman setelah RELOAD_AFTER_TRX_MS
+    // agar data terbaru dari server QRIS tampil
+    if (CONFIG.RELOAD_AFTER_TRX_MS > 0) {
+        setTimeout(() => {
+            // Hanya reload jika belum ada transaksi lagi dalam jeda itu
+            if (Date.now() - lastTrxTime >= CONFIG.RELOAD_AFTER_TRX_MS - 1000) {
+                enqueueReload('after_trx_refresh');
+            }
+        }, CONFIG.RELOAD_AFTER_TRX_MS);
+    }
 }
 
 // ── Start/Stop Polling ─────────────────────────────────────────
@@ -276,17 +305,17 @@ async function processReloadQueue() {
     isProcessingQueue = false;
 }
 
-// ── Auto-Reload Sebelum Sesi Habis ────────────────────────────
+// ── Auto-Reload: jika tidak ada transaksi selama X menit ──────
 function startAutoReloadCheck() {
     if (reloadCheckTimer) return;
     reloadCheckTimer = setInterval(() => {
         const elapsed = Date.now() - lastReloadTime;
-        const targetMs = CONFIG.RELOAD_BEFORE_MIN * 60 * 1000;
+        const targetMs = CONFIG.RELOAD_NO_TRX_MIN * 60 * 1000;
         const jitter = Math.random() * CONFIG.RELOAD_JITTER_MS;
 
         if (elapsed >= targetMs + jitter) {
-            log('Auto-reload untuk jaga sesi tetap aktif');
-            enqueueReload('anti_session_timeout');
+            log(`Auto-reload: tidak ada transaksi selama ${CONFIG.RELOAD_NO_TRX_MIN} menit`);
+            enqueueReload('no_trx_timeout');
         }
     }, 30000);
 }
@@ -311,6 +340,30 @@ const urlObserver = new MutationObserver(() => {
 });
 urlObserver.observe(document.body, { childList: true, subtree: true });
 
+// ── Dengar perubahan storage dari popup (tanpa reload halaman) ─
+chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.timingConfig) {
+        const newCfg = changes.timingConfig.newValue;
+        if (!newCfg) return;
+        CONFIG = { ...CONFIG_DEFAULT, ...newCfg };
+        log('Timing config diperbarui dari popup:', {
+            poll: CONFIG.POLL_INTERVAL_MS + 'ms',
+            reloadNoTrx: CONFIG.RELOAD_NO_TRX_MIN + ' menit',
+            reloadAfterTrx: CONFIG.RELOAD_AFTER_TRX_MS + 'ms'
+        });
+        // Restart polling agar interval baru langsung berlaku
+        stopScraping();
+        stopCommandPolling();
+        if (reloadCheckTimer) { clearInterval(reloadCheckTimer); reloadCheckTimer = null; }
+        startScraping();
+        startCommandPolling();
+        startAutoReloadCheck();
+    }
+});
+
 // ── Init ───────────────────────────────────────────────────────
-log('Content script aktif, cek status halaman...');
-cekStatusHalaman();
+(async () => {
+    await loadTimingConfig(); // baca config sebelum mulai
+    log('Content script aktif, cek status halaman...');
+    cekStatusHalaman();
+})();

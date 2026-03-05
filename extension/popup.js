@@ -268,6 +268,65 @@ document.getElementById('btnRefresh').addEventListener('click', () => {
     loadServerStatus();
 });
 
+// ─── Timing Config ────────────────────────────────────────────
+const DEFAULT_TIMING = {
+    POLL_INTERVAL_MS: 5000,
+    RELOAD_NO_TRX_MIN: 14,
+    RELOAD_AFTER_TRX_MS: 30000,
+    MIN_RELOAD_GAP_MS: 25000
+};
+
+function updateTimingUI(cfg) {
+    document.getElementById('inputPollSec').value = Math.round((cfg.POLL_INTERVAL_MS || 5000) / 1000);
+    document.getElementById('inputReloadNoTrxMin').value = cfg.RELOAD_NO_TRX_MIN || 14;
+    document.getElementById('inputReloadAfterTrxSec').value = Math.round((cfg.RELOAD_AFTER_TRX_MS || 30000) / 1000);
+    document.getElementById('inputMinReloadGapSec').value = Math.round((cfg.MIN_RELOAD_GAP_MS || 25000) / 1000);
+}
+
+async function loadTimingConfig() {
+    try {
+        const { timingConfig } = await chrome.storage.local.get('timingConfig');
+        updateTimingUI(timingConfig || DEFAULT_TIMING);
+    } catch {
+        updateTimingUI(DEFAULT_TIMING);
+    }
+}
+
+document.getElementById('btnSaveTiming').addEventListener('click', async () => {
+    const btn = document.getElementById('btnSaveTiming');
+    const feedback = document.getElementById('timingFeedback');
+
+    const pollSec = parseInt(document.getElementById('inputPollSec').value) || 5;
+    const reloadNoTrxMin = parseInt(document.getElementById('inputReloadNoTrxMin').value) || 14;
+    const reloadAfterTrx = parseInt(document.getElementById('inputReloadAfterTrxSec').value) || 30;
+    const minGapSec = parseInt(document.getElementById('inputMinReloadGapSec').value) || 25;
+
+    const timingConfig = {
+        POLL_INTERVAL_MS: Math.max(2, pollSec) * 1000,
+        RELOAD_NO_TRX_MIN: Math.max(1, reloadNoTrxMin),
+        RELOAD_AFTER_TRX_MS: Math.max(0, reloadAfterTrx) * 1000,
+        MIN_RELOAD_GAP_MS: Math.max(10, minGapSec) * 1000,
+    };
+
+    btn.disabled = true;
+    btn.textContent = '⏳ Menyimpan...';
+
+    try {
+        // Simpan ke storage — content.js akan otomatis update via storage.onChanged
+        await chrome.storage.local.set({ timingConfig });
+        feedback.textContent = `✅ Tersimpan & langsung aktif di tab QRIS`;
+        feedback.className = 'save-feedback success';
+    } catch (e) {
+        feedback.textContent = '❌ ' + e.message;
+        feedback.className = 'save-feedback error';
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '⏱ Simpan Waktu';
+        setTimeout(() => { feedback.textContent = ''; feedback.className = 'save-feedback'; }, 4000);
+    }
+});
+
 // ─── Init ─────────────────────────────────────────────────────
 loadData();
 loadServerStatus();
+loadTimingConfig();

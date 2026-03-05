@@ -31,6 +31,18 @@ async function getServers() {
     try {
         const { serverConfig } = await chrome.storage.local.get('serverConfig');
         if (serverConfig && serverConfig.local && serverConfig.production) {
+            // ── Migrasi otomatis: jika masih pakai IP 192.168.x.x, ganti ke localhost
+            // Karena extension & backend ada di mesin yang sama (Armbian)
+            let migrated = false;
+            if (serverConfig.local.url && /192\.168\.\d+\.\d+/.test(serverConfig.local.url)) {
+                serverConfig.local.url = serverConfig.local.url.replace(/192\.168\.\d+\.\d+/, 'localhost');
+                migrated = true;
+            }
+            if (migrated) {
+                console.log('[QRIS BG] ⚡ Migrasi URL lokal → localhost:', serverConfig.local.url);
+                await chrome.storage.local.set({ serverConfig });
+            }
+
             console.log('[QRIS BG] getServers: dari storage →', serverConfig.local.url, '|', serverConfig.production.url);
             return serverConfig;
         }

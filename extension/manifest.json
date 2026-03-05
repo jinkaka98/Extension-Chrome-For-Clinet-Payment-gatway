@@ -10,7 +10,7 @@
   ],
   "host_permissions": [
     "https://merchant.qris.interactive.co.id/*",
-    "http://192.168.*.*/*",
+    "http://*/*",
     "https://alpakyros.com/*"
   ],
   "background": {

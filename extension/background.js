@@ -1,15 +1,28 @@
 // =============================================================
 // BACKGROUND SERVICE WORKER — QRIS Payment Monitor
 // Relay pesan dari content.js ke PHP web server via fetch()
-// Armbian tidak butuh IP publik — semua request OUTBOUND
 // =============================================================
 
-// ⚠️ SETTING UNTUK LOCAL TESTING
-const API_BASE = 'http://192.168.1.12:8000/api/qris';
+// ── Konfigurasi Server (dibaca dari storage, bisa diubah via popup) ─────────
 const API_KEY = 'AlpaKyros_QRIS_Monitor_2026';
+
+// Default target jika belum pernah di-set via popup
+const DEFAULT_TARGET = {
+    mode: 'local',               // 'local' | 'production'
+    localUrl: 'http://192.168.1.12:8000/api/qris',
+    productionUrl: 'https://alpakyros.com/api/qris'
+};
+
+// Ambil API_BASE aktif dari storage
+async function getApiBase() {
+    const { serverTarget } = await chrome.storage.local.get('serverTarget');
+    const t = serverTarget || DEFAULT_TARGET;
+    return t.mode === 'production' ? t.productionUrl : t.localUrl;
+}
 
 // ── HTTP Helper ───────────────────────────────────────────────
 async function kirimKeServer(endpoint, payload = {}) {
+    const API_BASE = await getApiBase();
     try {
         const res = await fetch(`${API_BASE}/${endpoint}`, {
             method: 'POST',
@@ -34,6 +47,7 @@ async function kirimKeServer(endpoint, payload = {}) {
 }
 
 async function getFromServer(endpoint) {
+    const API_BASE = await getApiBase();
     try {
         const res = await fetch(`${API_BASE}/${endpoint}`, {
             method: 'GET',
@@ -58,6 +72,7 @@ async function retryPendingQueue() {
     const { pendingQueue = [] } = await chrome.storage.local.get('pendingQueue');
     if (pendingQueue.length === 0) return;
 
+    const API_BASE = await getApiBase();
     const berhasil = [];
     const gagalLagi = [];
 
@@ -161,8 +176,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             // Content script minta tanya server: ada perintah?
             case 'CEK_PERINTAH': {
                 const serverResponse = await getFromServer('pending-commands');
-                // Server returns { success, message, data: { command, order_id } }
-                // Content.js expects { command: 'CEK_SEKARANG' }
                 const commandData = serverResponse?.data || { command: null };
                 sendResponse(commandData);
                 break;
@@ -171,6 +184,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             // Test Ping ke server tujuan
             case 'PING_SERVER': {
                 console.log('[QRIS BG] Ping server...');
+                const API_BASE = await getApiBase();
                 const startTime = performance.now();
                 try {
                     const res = await fetch(`${API_BASE}/ping`, {
@@ -222,6 +236,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 break;
             }
 
+            // Simpan konfigurasi server target dari popup
+            case 'SAVE_SERVER_TARGET': {
+                const target = message.target;
+                await chrome.storage.local.set({ serverTarget: target });
+                console.log('[QRIS BG] Server target disimpan:', target.mode, '→',
+                    target.mode === 'production' ? target.productionUrl : target.localUrl);
+                sendResponse({ ok: true });
+                break;
+            }
+
+            // Ambil konfigurasi server target aktif
+            case 'GET_SERVER_TARGET': {
+                const { serverTarget } = await chrome.storage.local.get('serverTarget');
+                sendResponse({ ok: true, target: serverTarget || DEFAULT_TARGET });
+                break;
+            }
+
             default:
                 sendResponse({ ok: false, error: 'Unknown message type' });
         }
@@ -244,14 +275,22 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 // ── Inisialisasi saat Service Worker pertama aktif ─────────────
 (async () => {
     // Reset harian counter jika hari sudah berganti
-    const { lastDate, totalHariIni } = await chrome.storage.local.get(['lastDate', 'totalHariIni']);
+    const { lastDate } = await chrome.storage.local.get(['lastDate', 'totalHariIni']);
     const today = new Date().toDateString();
     if (lastDate !== today) {
         await chrome.storage.local.set({ lastDate: today, totalHariIni: 0 });
     }
 
+    // Pastikan default server target tersimpan jika belum ada
+    const { serverTarget } = await chrome.storage.local.get('serverTarget');
+    if (!serverTarget) {
+        await chrome.storage.local.set({ serverTarget: DEFAULT_TARGET });
+        console.log('[QRIS BG] Default server target diset ke LOCAL');
+    }
+
     // Set status awal
     await chrome.storage.local.set({ monitorStatus: 'starting' });
 
-    console.log('[QRIS BG] Service Worker aktif');
+    const apiBase = await getApiBase();
+    console.log('[QRIS BG] Service Worker aktif — Target:', apiBase);
 })();

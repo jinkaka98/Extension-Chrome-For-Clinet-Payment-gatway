@@ -4,6 +4,16 @@
 
 const QRIS_HISTORI_URL = 'https://merchant.qris.interactive.co.id/v2/m/kontenr.php?idir=pages/historytrx.php';
 
+// Default target (sync dgn background.js)
+const DEFAULT_TARGET = {
+    mode: 'local',
+    localUrl: 'http://192.168.1.12:8000/api/qris',
+    productionUrl: 'https://alpakyros.com/api/qris'
+};
+
+// ─── State ────────────────────────────────────────────────────
+let currentTarget = { ...DEFAULT_TARGET };
+
 // Format rupiah dari integer
 function formatRupiah(angka) {
     if (!angka) return '—';
@@ -18,7 +28,12 @@ function formatWaktu(isoStr) {
         ' — ' + d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
 }
 
-// Update DOM berdasarkan data dari storage
+// Hitung URL aktif dari target
+function getActiveUrl(target) {
+    return target.mode === 'production' ? target.productionUrl : target.localUrl;
+}
+
+// ─── Update UI Status ─────────────────────────────────────────
 function updateUI(data) {
     const dot = document.getElementById('statusDot');
 
@@ -68,7 +83,43 @@ function updateUI(data) {
         data.lastTransaksiTime ? 'Update ' + formatWaktu(data.lastTransaksiTime) : 'Belum ada data';
 }
 
-// Muat data dari storage
+// ─── Update UI Setting Panel ──────────────────────────────────
+function updateSettingPanel(target) {
+    const mode = target.mode || 'local';
+    const isProduction = mode === 'production';
+
+    // Toggle button active state
+    document.getElementById('btnModeLocal').classList.toggle('active', !isProduction);
+    document.getElementById('btnModeProduction').classList.toggle('active', isProduction);
+
+    // Show/hide input groups
+    document.getElementById('groupLocal').style.display = isProduction ? 'none' : 'block';
+    document.getElementById('groupProduction').style.display = isProduction ? 'block' : 'none';
+
+    // Fill inputs
+    document.getElementById('inputLocalUrl').value = target.localUrl || DEFAULT_TARGET.localUrl;
+    document.getElementById('inputProductionUrl').value = target.productionUrl || DEFAULT_TARGET.productionUrl;
+
+    // Update mode badge & active server display
+    const badge = document.getElementById('modeBadge');
+    const activeUrl = document.getElementById('activeServerUrl');
+    const activeUrlText = getActiveUrl(target);
+
+    if (isProduction) {
+        badge.textContent = 'PRODUCTION';
+        badge.className = 'mode-badge production';
+    } else {
+        badge.textContent = 'LOCAL';
+        badge.className = 'mode-badge local';
+    }
+
+    activeUrl.textContent = activeUrlText;
+    activeUrl.title = activeUrlText;
+
+    currentTarget = { ...target };
+}
+
+// ─── Load data dari storage ───────────────────────────────────
 async function loadData() {
     const data = await chrome.storage.local.get([
         'monitorStatus',
@@ -80,18 +131,88 @@ async function loadData() {
     updateUI(data);
 }
 
-// Tombol buka halaman QRIS
+async function loadServerTarget() {
+    try {
+        const result = await chrome.runtime.sendMessage({ type: 'GET_SERVER_TARGET' });
+        if (result && result.ok) {
+            updateSettingPanel(result.target);
+        } else {
+            updateSettingPanel(DEFAULT_TARGET);
+        }
+    } catch {
+        updateSettingPanel(DEFAULT_TARGET);
+    }
+}
+
+// ─── Mode Toggle ──────────────────────────────────────────────
+document.getElementById('btnModeLocal').addEventListener('click', () => {
+    currentTarget.mode = 'local';
+    updateSettingPanel(currentTarget);
+});
+
+document.getElementById('btnModeProduction').addEventListener('click', () => {
+    currentTarget.mode = 'production';
+    updateSettingPanel(currentTarget);
+});
+
+// ─── Simpan Target ────────────────────────────────────────────
+document.getElementById('btnSaveTarget').addEventListener('click', async () => {
+    const btn = document.getElementById('btnSaveTarget');
+    const feedback = document.getElementById('saveFeedback');
+
+    const localUrl = document.getElementById('inputLocalUrl').value.trim();
+    const productionUrl = document.getElementById('inputProductionUrl').value.trim();
+
+    // Validasi URL dasar
+    const urlDipakai = currentTarget.mode === 'production' ? productionUrl : localUrl;
+    if (!urlDipakai) {
+        feedback.textContent = '⚠️ URL tidak boleh kosong';
+        feedback.className = 'save-feedback error';
+        return;
+    }
+
+    const newTarget = {
+        mode: currentTarget.mode,
+        localUrl: localUrl || DEFAULT_TARGET.localUrl,
+        productionUrl: productionUrl || DEFAULT_TARGET.productionUrl
+    };
+
+    btn.disabled = true;
+    btn.textContent = '⏳ Menyimpan...';
+
+    try {
+        const result = await chrome.runtime.sendMessage({ type: 'SAVE_SERVER_TARGET', target: newTarget });
+        if (result && result.ok) {
+            updateSettingPanel(newTarget);
+            feedback.textContent = `✅ Disimpan! Aktif: ${newTarget.mode === 'production' ? 'Production 🌐' : 'Local 🏠'}`;
+            feedback.className = 'save-feedback success';
+        } else {
+            feedback.textContent = '❌ Gagal menyimpan';
+            feedback.className = 'save-feedback error';
+        }
+    } catch (e) {
+        feedback.textContent = '❌ ' + e.message;
+        feedback.className = 'save-feedback error';
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '💾 Simpan & Terapkan';
+        setTimeout(() => { feedback.textContent = ''; feedback.className = 'save-feedback'; }, 4000);
+    }
+});
+
+// ─── Tombol buka halaman QRIS ─────────────────────────────────
 document.getElementById('btnBukaQris').addEventListener('click', () => {
     chrome.tabs.create({ url: QRIS_HISTORI_URL });
     window.close();
 });
 
-// Tombol refresh data popup
+// ─── Tombol refresh data popup ────────────────────────────────
 document.getElementById('btnRefresh').addEventListener('click', () => {
     loadData();
+    loadServerTarget();
 });
 
-// ── Tombol Test Ping Server ──────────────────────────────────
+// ─── Tombol Test Ping Server ──────────────────────────────────
 document.getElementById('btnPing').addEventListener('click', async () => {
     const btn = document.getElementById('btnPing');
     const card = document.getElementById('pingResultCard');
@@ -146,5 +267,6 @@ document.getElementById('btnPing').addEventListener('click', async () => {
     }
 });
 
-// Load saat popup dibuka
+// ─── Load saat popup dibuka ───────────────────────────────────
 loadData();
+loadServerTarget();

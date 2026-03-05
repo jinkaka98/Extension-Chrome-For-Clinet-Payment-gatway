@@ -1,16 +1,19 @@
 <!DOCTYPE html>
 <html lang="id">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>QRIS Monitor</title>
   <link rel="stylesheet" href="popup.css" />
 </head>
+
 <body>
 
   <div class="header">
     <div class="status-dot" id="statusDot"></div>
     <span class="header-title">QRIS Payment Monitor</span>
+    <span class="mode-badge" id="modeBadge">LOCAL</span>
   </div>
 
   <div class="card">
@@ -26,6 +29,10 @@
       <span class="label">Transaksi hari ini</span>
       <span class="value highlight" id="totalHariIni">0</span>
     </div>
+    <div class="row">
+      <span class="label">Server Aktif</span>
+      <span class="value server-url-display" id="activeServerUrl">—</span>
+    </div>
   </div>
 
   <div class="card last-trx" id="lastTrxCard" style="display:none">
@@ -36,6 +43,33 @@
       <span id="lastMetode">—</span>
     </div>
     <div class="trx-time" id="lastTime">—</div>
+  </div>
+
+  <!-- ── Panel Server Target ────────────────────────────────── -->
+  <div class="card server-settings">
+    <div class="card-label">🎯 Server Target</div>
+
+    <div class="mode-toggle">
+      <button class="mode-btn" id="btnModeLocal" data-mode="local">
+        🏠 Local
+      </button>
+      <button class="mode-btn" id="btnModeProduction" data-mode="production">
+        🌐 Production
+      </button>
+    </div>
+
+    <div class="setting-group" id="groupLocal">
+      <label class="setting-label">URL Local (IP:PORT)</label>
+      <input type="text" id="inputLocalUrl" class="setting-input" placeholder="http://192.168.x.x:8000/api/qris" />
+    </div>
+
+    <div class="setting-group" id="groupProduction">
+      <label class="setting-label">URL Production (Hosting)</label>
+      <input type="text" id="inputProductionUrl" class="setting-input" placeholder="https://alpakyros.com/api/qris" />
+    </div>
+
+    <button id="btnSaveTarget" class="btn btn-save">💾 Simpan &amp; Terapkan</button>
+    <div class="save-feedback" id="saveFeedback"></div>
   </div>
 
   <div class="actions">
@@ -57,4 +91,5 @@
 
   <script src="popup.js"></script>
 </body>
+
 </html>

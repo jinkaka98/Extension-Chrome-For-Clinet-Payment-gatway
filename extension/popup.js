@@ -5,7 +5,7 @@
 const QRIS_HISTORI_URL = 'https://merchant.qris.interactive.co.id/v2/m/kontenr.php?idir=pages/historytrx.php';
 
 const DEFAULT_SERVERS = {
-    local: { url: 'http://192.168.1.8:8000/api/qris' },
+    local: { url: 'http://localhost:8000/api/qris' },
     production: { url: 'https://alpakyros.com/api/qris' }
 };
 

@@ -14,7 +14,7 @@ const DEFAULT_SERVERS = {
     local: {
         id: 'local',
         label: 'Local 🏠',
-        url: 'http://192.168.1.8:8000/api/qris',
+        url: 'http://localhost:8000/api/qris',
         enabled: true
     },
     production: {

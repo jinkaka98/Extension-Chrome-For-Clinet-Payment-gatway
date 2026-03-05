@@ -10,11 +10,13 @@ const PING_TIMEOUT_MS = 5000; // timeout cek server (5 detik — lebih longgar)
 // ── Konfigurasi Default Server ────────────────────────────────
 // CATATAN: IP ini akan di-override oleh config yang tersimpan di storage.
 // User bisa ganti URL lewat tab Pengaturan di popup.
+// PENTING: "localhost" dari Armbian merujuk ke Armbian itu sendiri!
+// Gunakan IP LAN PC yang menjalankan backend (cek: ipconfig → IPv4).
 const DEFAULT_SERVERS = {
     local: {
         id: 'local',
         label: 'Local 🏠',
-        url: 'http://localhost:8000/api/qris',
+        url: 'http://192.168.1.16:8000/api/qris',   // ← IP LAN PC (bukan localhost)
         enabled: true
     },
     production: {

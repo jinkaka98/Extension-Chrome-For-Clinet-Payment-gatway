@@ -3,56 +3,67 @@
 
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>QRIS Monitor</title>
   <link rel="stylesheet" href="popup.css" />
 </head>
 
 <body>
 
+  <!-- HEADER -->
   <div class="header">
     <div class="status-dot" id="statusDot"></div>
     <span class="header-title">QRIS Payment Monitor</span>
     <span class="broadcast-badge" id="broadcastBadge">—</span>
   </div>
 
+  <!-- TABS -->
   <div class="tabs">
     <button id="tabMonitor" class="tab-btn active">📊 Monitoring</button>
     <button id="tabSettings" class="tab-btn">⚙️ Pengaturan</button>
   </div>
 
-  <!-- TAB MONITORING -->
+  <!-- ============================================================
+       TAB 1: MONITORING
+  ============================================================ -->
   <div id="viewMonitor" class="view-content active">
-    <!-- Status Transaksi & Session -->
-    <div class="card">
-      <div class="row">
-        <span class="label">Monitor</span>
-        <span class="value" id="monitorStatus">—</span>
+
+    <!-- Row atas: status kiri, last trx kanan -->
+    <div class="panel-row">
+
+      <!-- Status Card -->
+      <div class="card flex-col">
+        <div class="card-label">📋 Status</div>
+        <div class="row">
+          <span class="label">Monitor</span>
+          <span class="value" id="monitorStatus">—</span>
+        </div>
+        <div class="row">
+          <span class="label">Session</span>
+          <span class="value" id="sessionStatus">—</span>
+        </div>
+        <div class="row">
+          <span class="label">Trx hari ini</span>
+          <span class="value highlight" id="totalHariIni">0</span>
+        </div>
       </div>
-      <div class="row">
-        <span class="label">Session QRIS</span>
-        <span class="value" id="sessionStatus">—</span>
+
+      <!-- Last Trx Card -->
+      <div class="card flex-col last-trx" id="lastTrxCard">
+        <div class="card-label">💳 Transaksi Terakhir</div>
+        <div class="trx-nominal" id="lastNominal">—</div>
+        <div class="trx-meta">
+          <span id="lastNama">—</span>
+          <span class="trx-bullet">•</span>
+          <span id="lastMetode">—</span>
+        </div>
+        <div class="trx-time" id="lastTime">—</div>
       </div>
-      <div class="row">
-        <span class="label">Transaksi hari ini</span>
-        <span class="value highlight" id="totalHariIni">0</span>
-      </div>
+
     </div>
 
-    <!-- Transaksi Terakhir -->
-    <div class="card last-trx" id="lastTrxCard" style="display:none">
-      <div class="card-label">Transaksi Terakhir</div>
-      <div class="trx-nominal" id="lastNominal">—</div>
-      <div class="trx-meta">
-        <span id="lastNama">—</span> &bull;
-        <span id="lastMetode">—</span>
-      </div>
-      <div class="trx-time" id="lastTime">—</div>
-    </div>
-
-    <!-- Status Dual Server -->
-    <div class="card server-status-card">
-      <div class="card-label">📡 Status Server (Auto Broadcast)</div>
+    <!-- Server Status -->
+    <div class="card" style="margin-top:8px">
+      <div class="card-label">📡 Auto Broadcast</div>
       <div class="server-rows-grid">
         <div class="server-row" id="rowLocal">
           <div class="server-dot" id="dotLocal"></div>
@@ -73,12 +84,12 @@
       </div>
     </div>
 
-    <!-- Aksi Monitoring -->
+    <!-- Tombol Aksi: 2x2 grid -->
     <div class="actions">
-      <button id="btnBukaQris" class="btn btn-primary">🔗 Buka Halaman QRIS</button>
-      <button id="btnDetect" class="btn btn-detect">🔍 Deteksi Ulang Server</button>
-      <button id="btnPing" class="btn btn-ping">📡 Ping Semua Server</button>
-      <button id="btnRefresh" class="btn btn-secondary">🔄 Refresh Data</button>
+      <button id="btnBukaQris" class="btn btn-primary">🔗 Buka QRIS</button>
+      <button id="btnRefresh" class="btn btn-secondary">🔄 Refresh</button>
+      <button id="btnDetect" class="btn btn-detect">🔍 Deteksi Server</button>
+      <button id="btnPing" class="btn btn-ping">📡 Ping Semua</button>
     </div>
 
     <!-- Hasil Ping -->
@@ -86,14 +97,17 @@
       <div class="card-label">Hasil Ping</div>
       <div id="pingResultBody"></div>
     </div>
+
   </div>
 
-  <!-- TAB PENGATURAN -->
-  <div id="viewSettings" class="view-content" style="display:none">
-    <!-- Konfigurasi URL Server -->
+  <!-- ============================================================
+       TAB 2: PENGATURAN
+  ============================================================ -->
+  <div id="viewSettings" class="view-content">
+
+    <!-- URL Server -->
     <div class="card server-settings">
       <div class="card-label">⚙️ URL Server</div>
-
       <div class="setting-group">
         <label class="setting-label">Local URL</label>
         <input type="text" id="inputLocalUrl" class="setting-input" placeholder="http://192.168.x.x:8000/api/qris" />
@@ -102,18 +116,17 @@
         <label class="setting-label">Production URL</label>
         <input type="text" id="inputProductionUrl" class="setting-input" placeholder="https://alpakyros.com/api/qris" />
       </div>
-
       <button id="btnSaveConfig" class="btn btn-save">💾 Simpan URL</button>
       <div class="save-feedback" id="saveFeedback"></div>
     </div>
 
     <!-- Pengaturan Waktu -->
-    <div class="card server-settings" style="margin-top: 10px;">
-      <div class="card-label">⏱ Waktu Reload</div>
-
+    <div class="card server-settings" style="margin-top:8px">
+      <div class="card-label">⏱ Pengaturan Waktu Reload</div>
       <div class="timing-grid">
+
         <div class="timing-item">
-          <label class="setting-label">Scrape tiap (detik)</label>
+          <label class="setting-label">Scrape tiap</label>
           <div class="timing-input-row">
             <input type="number" id="inputPollSec" class="setting-input timing-input" min="2" max="60" value="5" />
             <span class="timing-unit">dtk</span>
@@ -122,17 +135,17 @@
         </div>
 
         <div class="timing-item">
-          <label class="setting-label">Reload idle (menit)</label>
+          <label class="setting-label">Reload idle</label>
           <div class="timing-input-row">
             <input type="number" id="inputReloadNoTrxMin" class="setting-input timing-input" min="1" max="60"
               value="14" />
             <span class="timing-unit">mnt</span>
           </div>
-          <div class="timing-hint">Idle tanpa trx</div>
+          <div class="timing-hint">Tanpa transaksi</div>
         </div>
 
         <div class="timing-item">
-          <label class="setting-label">Delay trx (detik)</label>
+          <label class="setting-label">Delay setelah trx</label>
           <div class="timing-input-row">
             <input type="number" id="inputReloadAfterTrxSec" class="setting-input timing-input" min="0" max="300"
               value="30" />
@@ -142,24 +155,24 @@
         </div>
 
         <div class="timing-item">
-          <label class="setting-label">Min. jeda (detik)</label>
+          <label class="setting-label">Min. jeda reload</label>
           <div class="timing-input-row">
             <input type="number" id="inputMinReloadGapSec" class="setting-input timing-input" min="10" max="120"
               value="25" />
             <span class="timing-unit">dtk</span>
           </div>
-          <div class="timing-hint">Anti-spam reload</div>
+          <div class="timing-hint">Anti-spam</div>
         </div>
-      </div>
 
+      </div>
       <button id="btnSaveTiming" class="btn btn-save" style="margin-top:8px">⏱ Simpan Waktu</button>
       <div class="save-feedback" id="timingFeedback"></div>
     </div>
+
   </div>
 
-  <div class="footer">
-    v1.1.0 &bull; <span id="lastUpdate">—</span>
-  </div>
+  <!-- FOOTER -->
+  <div class="footer">v1.1.0 &bull; <span id="lastUpdate">—</span></div>
 
   <script src="popup.js"></script>
 </body>

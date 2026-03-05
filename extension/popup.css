@@ -1,6 +1,7 @@
-/* ========================================================
-   QRIS Monitor — Popup Styles (Dual Broadcast Mode)
-   ======================================================== */
+/* ============================================================
+   QRIS Monitor — Popup Styles
+   Aspect: landscape-ish (420x auto), dual-tab layout
+   ============================================================ */
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
@@ -19,78 +20,40 @@
   --green: #00e676;
   --red: #ff5252;
   --yellow: #ffd740;
+  --cyan: #06b6d4;
+  --primary: #7c3aed;
   --text: #e0e0e0;
   --muted: #6b7280;
-  --accent: #7c3aed;
-  --cyan: #06b6d4;
+  --r: 8px;
 }
 
+/* ── Body ──────────────────────────────────────────────────── */
 body {
   font-family: 'Inter', sans-serif;
   background: var(--bg);
   color: var(--text);
-  width: 340px;
-  min-height: 200px;
-  padding: 0 0 8px;
-  font-size: 13px;
-}
-
-/* ── Tabs ─────────────────────────────────────────────── */
-.tabs {
-  display: flex;
-  margin: 0 10px 8px;
-  background: var(--surface);
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  overflow: hidden;
-}
-
-.tab-btn {
-  flex: 1;
-  background: transparent;
-  color: var(--muted);
-  border: none;
-  padding: 8px 0;
+  width: 420px;
+  /* landscape lebar */
+  padding-bottom: 10px;
   font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
 }
 
-.tab-btn:hover {
-  background: rgba(255, 255, 255, 0.05);
-}
-
-.tab-btn.active {
-  background: rgba(124, 58, 237, 0.15);
-  color: var(--primary);
-  box-shadow: inset 0 -2px 0 var(--primary);
-}
-
-.view-content {
-  display: none;
-}
-
-.view-content.active {
-  display: block;
-}
-
-/* ── Header ────────────────────────────────────────────── */
+/* ── Header ────────────────────────────────────────────────── */
 .header {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 14px 10px;
-  border-bottom: 1px solid var(--border);
+  padding: 10px 14px;
   background: var(--surface);
+  border-bottom: 1px solid var(--border);
 }
 
 .header-title {
+  flex: 1;
   font-weight: 700;
   font-size: 12px;
-  letter-spacing: 0.3px;
   color: #fff;
-  flex: 1;
+  letter-spacing: 0.3px;
 }
 
 .status-dot {
@@ -117,9 +80,9 @@ body {
   box-shadow: 0 0 6px var(--yellow);
 }
 
-/* Broadcast Badge */
+/* Broadcast badge */
 .broadcast-badge {
-  padding: 2px 7px;
+  padding: 2px 8px;
   border-radius: 99px;
   font-size: 9px;
   font-weight: 700;
@@ -128,44 +91,110 @@ body {
 }
 
 .broadcast-badge.dual {
-  background: rgba(6, 182, 212, 0.2);
+  background: rgba(6, 182, 212, .2);
   color: var(--cyan);
-  border: 1px solid rgba(6, 182, 212, 0.4);
+  border: 1px solid rgba(6, 182, 212, .4);
 }
 
 .broadcast-badge.single {
-  background: rgba(0, 230, 118, 0.15);
+  background: rgba(0, 230, 118, .15);
   color: var(--green);
-  border: 1px solid rgba(0, 230, 118, 0.3);
+  border: 1px solid rgba(0, 230, 118, .3);
 }
 
 .broadcast-badge.offline {
-  background: rgba(255, 82, 82, 0.15);
+  background: rgba(255, 82, 82, .15);
   color: var(--red);
-  border: 1px solid rgba(255, 82, 82, 0.3);
+  border: 1px solid rgba(255, 82, 82, .3);
 }
 
 .broadcast-badge.unknown {
-  background: rgba(107, 114, 128, 0.2);
+  background: rgba(107, 114, 128, .2);
   color: var(--muted);
   border: 1px solid var(--border);
 }
 
-/* ── Cards ─────────────────────────────────────────────── */
+/* ── Tabs ──────────────────────────────────────────────────── */
+.tabs {
+  display: flex;
+  margin: 8px 10px 0;
+  border-radius: var(--r);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.tab-btn {
+  flex: 1;
+  background: transparent;
+  color: var(--muted);
+  border: none;
+  padding: 7px 0;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .2s;
+  font-family: inherit;
+}
+
+.tab-btn:hover {
+  background: rgba(255, 255, 255, .04);
+}
+
+.tab-btn.active {
+  background: rgba(124, 58, 237, .18);
+  color: var(--primary);
+  box-shadow: inset 0 -2px 0 var(--primary);
+}
+
+/* ── View Content ──────────────────────────────────────────── */
+.view-content {
+  display: none;
+}
+
+.view-content.active {
+  display: block;
+}
+
+/* ── Cards ─────────────────────────────────────────────────── */
 .card {
   margin: 8px 10px 0;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--r);
   padding: 4px 0;
 }
 
-/* Row info biasa (vertikal satu kolom) */
+.card-label {
+  font-size: 9px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  padding: 7px 12px 3px;
+}
+
+.flex-col {
+  padding: 0;
+}
+
+/* ── Panel Row (landscape: 2 card berdampingan) ─────────────── */
+.panel-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 8px 10px 0;
+}
+
+.panel-row .card {
+  margin: 0;
+}
+
+/* ── Row info ──────────────────────────────────────────────── */
 .row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 6px 12px;
+  padding: 5px 12px;
 }
 
 .row+.row {
@@ -174,32 +203,58 @@ body {
 
 .label {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 10px;
 }
 
 .value {
   font-weight: 600;
-  font-size: 11px;
+  font-size: 10px;
 }
 
 .highlight {
   color: var(--green);
-  font-size: 13px;
+  font-size: 14px;
+  font-weight: 700;
 }
 
-.card-label {
+/* ── Last Trx Card ─────────────────────────────────────────── */
+.last-trx {
+  padding: 8px 12px !important;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.last-trx .card-label {
+  padding: 0 0 4px;
+}
+
+.trx-nominal {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--green);
+}
+
+.trx-meta {
+  font-size: 10px;
+  color: var(--text);
+  margin-top: 3px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.trx-bullet {
+  color: var(--muted);
+}
+
+.trx-time {
   font-size: 9px;
   color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.8px;
-  padding: 8px 12px 4px;
+  margin-top: 2px;
 }
 
-/* ── Server Status Card ─────────────────────────────────── */
-.server-status-card {
-  padding-bottom: 6px !important;
-}
-
+/* ── Server Status ─────────────────────────────────────────── */
 .server-rows-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -208,17 +263,17 @@ body {
 .server-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   padding: 6px 12px;
-  transition: background 0.2s;
+  transition: background .2s;
 }
 
-.server-row+.server-row {
-  border-top: 1px solid var(--border);
+.server-rows-grid .server-row:nth-child(2) {
+  border-left: 1px solid var(--border);
 }
 
 .server-row.active {
-  background: rgba(0, 230, 118, 0.05);
+  background: rgba(0, 230, 118, .05);
 }
 
 .server-dot {
@@ -252,13 +307,12 @@ body {
 }
 
 .server-name {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
-  color: var(--text);
 }
 
 .server-addr {
-  font-size: 9px;
+  font-size: 8px;
   color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -266,51 +320,124 @@ body {
 }
 
 .server-state {
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 600;
   white-space: nowrap;
 }
 
-/* ── Last Trx Card ──────────────────────────────────────── */
-.last-trx {
+/* ── Tombol Aksi (2×2 grid) ────────────────────────────────── */
+.actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 8px 10px 0;
+}
+
+.btn {
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: var(--r);
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  transition: opacity .15s, transform .1s;
+}
+
+.btn:active {
+  transform: scale(.97);
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: #fff;
+}
+
+.btn-secondary {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.btn-detect {
+  background: linear-gradient(135deg, #d97706, #b45309);
+  color: #fff;
+}
+
+.btn-ping {
+  background: linear-gradient(135deg, #0d9488, #06b6d4);
+  color: #fff;
+}
+
+.btn-save {
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+  color: #fff;
+  width: 100%;
+}
+
+.btn-primary:hover,
+.btn-detect:hover,
+.btn-ping:hover,
+.btn-save:hover {
+  opacity: .85;
+}
+
+.btn-secondary:hover {
+  border-color: var(--primary);
+}
+
+.btn-detect:disabled,
+.btn-ping:disabled,
+.btn-save:disabled {
+  opacity: .5;
+  cursor: wait;
+}
+
+/* ── Ping Result ───────────────────────────────────────────── */
+.ping-result {
   padding: 8px 12px !important;
 }
 
-.trx-nominal {
-  font-size: 17px;
-  font-weight: 700;
-  color: var(--green);
-  margin-bottom: 2px;
-}
-
-.trx-meta {
-  font-size: 11px;
-  color: var(--text);
-  margin-bottom: 2px;
-}
-
-.trx-time {
+.ping-row {
+  padding: 5px 0;
   font-size: 10px;
-  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
-/* ── Settings Card ──────────────────────────────────────── */
+.ping-row+.ping-row {
+  border-top: 1px solid var(--border);
+}
+
+.ping-latency-inline {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ping-url {
+  font-size: 8px;
+  color: var(--muted);
+  word-break: break-all;
+}
+
+/* ── Settings Tab ──────────────────────────────────────────── */
 .server-settings {
   padding: 8px 12px !important;
 }
 
-
 .setting-group {
-  margin-bottom: 7px;
+  margin-bottom: 8px;
 }
 
 .setting-label {
   display: block;
   font-size: 9px;
   color: var(--muted);
-  margin-bottom: 3px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  margin-bottom: 3px;
 }
 
 .setting-input {
@@ -323,66 +450,23 @@ body {
   font-size: 10px;
   padding: 5px 8px;
   outline: none;
-  transition: border-color 0.15s;
+  transition: border-color .15s;
 }
 
 .setting-input:focus {
-  border-color: var(--accent);
+  border-color: var(--primary);
 }
 
 .setting-input::placeholder {
   color: var(--muted);
-  opacity: 0.6;
+  opacity: .6;
 }
 
-.btn-save {
-  width: 100%;
-  margin-top: 2px;
-  padding: 6px 12px;
-  border-radius: 7px;
-  border: none;
-  cursor: pointer;
-  font-family: inherit;
-  font-size: 11px;
-  font-weight: 600;
-  background: linear-gradient(135deg, #7c3aed, #6d28d9);
-  color: #fff;
-  transition: opacity 0.15s, transform 0.1s;
-}
-
-.btn-save:hover {
-  opacity: 0.85;
-}
-
-.btn-save:active {
-  transform: scale(0.98);
-}
-
-.btn-save:disabled {
-  opacity: 0.5;
-  cursor: wait;
-}
-
-.save-feedback {
-  min-height: 15px;
-  font-size: 10px;
-  margin-top: 4px;
-  text-align: center;
-}
-
-.save-feedback.success {
-  color: var(--green);
-}
-
-.save-feedback.error {
-  color: var(--red);
-}
-
-/* ── Timing Grid ────────────────────────────────────────────── */
+/* ── Timing Grid (2×2) ─────────────────────────────────────── */
 .timing-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 6px;
+  gap: 8px;
   margin-top: 4px;
 }
 
@@ -401,12 +485,11 @@ body {
 .timing-input {
   width: 100% !important;
   text-align: center;
-  font-size: 13px !important;
+  font-size: 14px !important;
   font-weight: 700 !important;
   padding: 5px 4px !important;
 }
 
-/* Hilangkan arrow number input */
 .timing-input::-webkit-outer-spin-button,
 .timing-input::-webkit-inner-spin-button {
   -webkit-appearance: none;
@@ -421,126 +504,34 @@ body {
   font-size: 9px;
   color: var(--muted);
   white-space: nowrap;
-  min-width: 16px;
+  min-width: 18px;
 }
 
 .timing-hint {
-  font-size: 9px;
+  font-size: 8px;
   color: var(--muted);
-  line-height: 1.3;
 }
 
-/* ── Buttons ────────────────────────────────────────────── */
-.actions {
-  padding: 8px 10px 0;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 5px;
+/* ── Save Feedback ─────────────────────────────────────────── */
+.save-feedback {
+  min-height: 14px;
+  font-size: 10px;
+  margin-top: 4px;
+  text-align: center;
 }
 
-.actions .btn:first-child,
-.actions .btn:last-child:nth-child(odd) {
-  grid-column: 1 / -1;
+.save-feedback.success {
+  color: var(--green);
 }
 
-.btn {
-  width: 100%;
-  padding: 7px 12px;
-  border-radius: 8px;
-  border: none;
-  cursor: pointer;
-  font-family: inherit;
-  font-size: 11px;
-  font-weight: 600;
-  transition: opacity 0.15s, transform 0.1s;
+.save-feedback.error {
+  color: var(--red);
 }
 
-.btn:active {
-  transform: scale(0.98);
-}
-
-.btn-primary {
-  background: var(--accent);
-  color: #fff;
-}
-
-.btn-primary:hover {
-  opacity: 0.85;
-}
-
-.btn-secondary {
-  background: var(--surface);
-  color: var(--text);
-  border: 1px solid var(--border);
-}
-
-.btn-secondary:hover {
-  border-color: var(--accent);
-}
-
-.btn-detect {
-  background: linear-gradient(135deg, #d97706, #b45309);
-  color: #fff;
-}
-
-.btn-detect:hover {
-  opacity: 0.85;
-}
-
-.btn-detect:disabled {
-  opacity: 0.6;
-  cursor: wait;
-}
-
-.btn-ping {
-  background: linear-gradient(135deg, #0d9488, #06b6d4);
-  color: #fff;
-  position: relative;
-  overflow: hidden;
-}
-
-.btn-ping:hover {
-  opacity: 0.85;
-}
-
-.btn-ping:disabled {
-  opacity: 0.6;
-  cursor: wait;
-}
-
-/* ── Ping Result Card ────────────────────────────────────── */
-.ping-result {
-  padding: 8px 12px !important;
-}
-
-.ping-row {
-  padding: 6px 0;
-  font-size: 11px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.ping-row+.ping-row {
-  border-top: 1px solid var(--border);
-}
-
-.ping-latency-inline {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--text);
-}
-
-.ping-url {
-  font-size: 9px;
-  color: var(--muted);
-  word-break: break-all;
-}
-
-/* ── Footer ─────────────────────────────────────────────── */
+/* ── Footer ────────────────────────────────────────────────── */
 .footer {
   text-align: center;
   color: var(--muted);
-  font-size: 10px;
-  margin-top: 10px;
+  font-size: 9px;
+  margin-top: 8px;
 }

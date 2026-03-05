@@ -9,6 +9,24 @@ const DEFAULT_SERVERS = {
     production: { url: 'https://alpakyros.com/api/qris' }
 };
 
+const DEFAULT_TIMING = {
+    POLL_INTERVAL_MS: 5000,
+    RELOAD_NO_TRX_MIN: 14,
+    RELOAD_AFTER_TRX_MS: 30000,
+    MIN_RELOAD_GAP_MS: 25000
+};
+
+// ─── Tab Navigation ──────────────────────────────────────────
+document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.view-content').forEach(c => c.classList.remove('active'));
+        btn.classList.add('active');
+        const id = btn.id === 'tabMonitor' ? 'viewMonitor' : 'viewSettings';
+        document.getElementById(id).classList.add('active');
+    });
+});
+
 // ─── Format helpers ───────────────────────────────────────────
 function formatRupiah(angka) {
     if (!angka) return '—';
@@ -20,46 +38,56 @@ function formatWaktu(isoStr) {
     return d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) +
         ' — ' + d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
 }
+function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
 
 // ─── Update status bar ────────────────────────────────────────
 function updateUI(data) {
     const dot = document.getElementById('statusDot');
-    const monitorEl = document.getElementById('monitorStatus');
+    const monEl = document.getElementById('monitorStatus');
     const mon = data.monitorStatus || 'offline';
 
     if (mon === 'online' || mon === 'starting') {
-        monitorEl.textContent = '✅ Online';
-        monitorEl.style.color = '#00e676';
+        monEl.textContent = '✅ Online';
+        monEl.style.color = '#00e676';
         dot.className = 'status-dot online';
     } else {
-        monitorEl.textContent = '🔴 Offline';
-        monitorEl.style.color = '#ff5252';
+        monEl.textContent = '🔴 Offline';
+        monEl.style.color = '#ff5252';
         dot.className = 'status-dot offline';
     }
 
-    const sessionEl = document.getElementById('sessionStatus');
+    const sessEl = document.getElementById('sessionStatus');
     const sess = data.sessionStatus || 'unknown';
     if (sess === 'active') {
-        sessionEl.textContent = '✅ Aktif';
-        sessionEl.style.color = '#00e676';
+        sessEl.textContent = '✅ Aktif';
+        sessEl.style.color = '#00e676';
     } else if (sess === 'expired') {
-        sessionEl.textContent = '⚠️ Habis — perlu login';
-        sessionEl.style.color = '#ffd740';
+        sessEl.textContent = '⚠️ Habis';
+        sessEl.style.color = '#ffd740';
         dot.className = 'status-dot warning';
     } else {
-        sessionEl.textContent = '—';
-        sessionEl.style.color = '';
+        sessEl.textContent = '—';
+        sessEl.style.color = '';
     }
 
     document.getElementById('totalHariIni').textContent = data.totalHariIni || 0;
 
+    // Last transaksi
+    const card = document.getElementById('lastTrxCard');
     if (data.lastTransaksi) {
         const t = data.lastTransaksi;
-        document.getElementById('lastTrxCard').style.display = 'block';
+        card.style.opacity = '1';
         document.getElementById('lastNominal').textContent = t.nominal_raw || formatRupiah(t.nominal);
         document.getElementById('lastNama').textContent = t.nama || '—';
         document.getElementById('lastMetode').textContent = t.metode || '—';
         document.getElementById('lastTime').textContent = t.waktu || '—';
+    } else {
+        // Tetap tampil card tapi kosong (biar grid tetap simetris)
+        card.style.opacity = '0.4';
+        document.getElementById('lastNominal').textContent = '—';
+        document.getElementById('lastNama').textContent = '—';
+        document.getElementById('lastMetode').textContent = '—';
+        document.getElementById('lastTime').textContent = 'Belum ada transaksi';
     }
 
     document.getElementById('lastUpdate').textContent =
@@ -68,14 +96,14 @@ function updateUI(data) {
 
 // ─── Update panel status server ───────────────────────────────
 function updateServerStatus(servers, reachability) {
-    const serverList = [
+    const list = [
         { id: 'local', label: 'Local 🏠' },
         { id: 'production', label: 'Production 🌐' }
     ];
 
     let activeCount = 0;
 
-    for (const srv of serverList) {
+    for (const srv of list) {
         const dot = document.getElementById(`dot${capitalize(srv.id)}`);
         const state = document.getElementById(`state${capitalize(srv.id)}`);
         const urlEl = document.getElementById(`url${capitalize(srv.id)}`);
@@ -86,7 +114,6 @@ function updateServerStatus(servers, reachability) {
         urlEl.title = url;
 
         if (!reachability) {
-            // Belum ada data deteksi
             dot.className = 'server-dot unknown';
             state.textContent = '?';
             state.style.color = '';
@@ -105,7 +132,7 @@ function updateServerStatus(servers, reachability) {
         }
     }
 
-    // Update broadcast badge
+    // Update broadcast badge di header
     const badge = document.getElementById('broadcastBadge');
     if (!reachability) {
         badge.textContent = 'DETEKSI...';
@@ -122,10 +149,6 @@ function updateServerStatus(servers, reachability) {
     }
 }
 
-function capitalize(str) {
-    return str.charAt(0).toUpperCase() + str.slice(1);
-}
-
 // ─── Load data dari storage ───────────────────────────────────
 async function loadData() {
     const data = await chrome.storage.local.get([
@@ -140,38 +163,95 @@ async function loadServerStatus() {
         const result = await chrome.runtime.sendMessage({ type: 'GET_SERVER_STATUS' });
         if (result && result.ok) {
             updateServerStatus(result.servers, result.reachability);
-            // Isi input URL dari config
-            const lUrl = result.servers?.local?.url || DEFAULT_SERVERS.local.url;
-            const pUrl = result.servers?.production?.url || DEFAULT_SERVERS.production.url;
-            document.getElementById('inputLocalUrl').value = lUrl;
-            document.getElementById('inputProductionUrl').value = pUrl;
+            document.getElementById('inputLocalUrl').value = result.servers?.local?.url || DEFAULT_SERVERS.local.url;
+            document.getElementById('inputProductionUrl').value = result.servers?.production?.url || DEFAULT_SERVERS.production.url;
         }
     } catch {
         updateServerStatus(null, null);
     }
 }
 
-// ─── Tombol Deteksi Ulang ─────────────────────────────────────
+// ─── Load timing config dari storage ─────────────────────────
+async function loadTimingConfig() {
+    try {
+        const { timingConfig } = await chrome.storage.local.get('timingConfig');
+        const c = timingConfig || DEFAULT_TIMING;
+        document.getElementById('inputPollSec').value = Math.round((c.POLL_INTERVAL_MS || 5000) / 1000);
+        document.getElementById('inputReloadNoTrxMin').value = c.RELOAD_NO_TRX_MIN || 14;
+        document.getElementById('inputReloadAfterTrxSec').value = Math.round((c.RELOAD_AFTER_TRX_MS || 30000) / 1000);
+        document.getElementById('inputMinReloadGapSec').value = Math.round((c.MIN_RELOAD_GAP_MS || 25000) / 1000);
+    } catch {
+        // Pakai default visual
+    }
+}
+
+// ─── Tombol: Deteksi Ulang Server ────────────────────────────
 document.getElementById('btnDetect').addEventListener('click', async () => {
     const btn = document.getElementById('btnDetect');
     btn.disabled = true;
     btn.textContent = '⏳ Mendeteksi...';
     updateServerStatus(null, null);
-
     try {
         const result = await chrome.runtime.sendMessage({ type: 'AUTO_DETECT' });
-        if (result && result.ok) {
-            await loadServerStatus();
-        }
-    } catch (e) {
-        console.error(e);
-    } finally {
+        if (result && result.ok) await loadServerStatus();
+    } catch (e) { console.error(e); }
+    finally {
         btn.disabled = false;
-        btn.textContent = '🔍 Deteksi Ulang Server';
+        btn.textContent = '🔍 Deteksi Server';
     }
 });
 
-// ─── Simpan konfigurasi URL ───────────────────────────────────
+// ─── Tombol: Ping Semua ────────────────────────────────────────
+document.getElementById('btnPing').addEventListener('click', async () => {
+    const btn = document.getElementById('btnPing');
+    const card = document.getElementById('pingResultCard');
+    const body = document.getElementById('pingResultBody');
+
+    btn.disabled = true;
+    btn.textContent = '⏳ Ping...';
+    card.style.display = 'block';
+    body.innerHTML = '<div class="ping-row">⏳ Mengirim ping...</div>';
+
+    try {
+        const result = await chrome.runtime.sendMessage({ type: 'PING_SERVER' });
+        if (result && result.ok) {
+            const rows = Object.values(result.results).map(r => {
+                const color = r.ok ? '#00e676' : '#ff5252';
+                const status = r.ok ? '✅' : '🔴';
+                const latency = r.latency !== undefined ? `${r.latency}ms` : '—';
+                const http = r.httpCode ? ` (HTTP ${r.httpCode})` : '';
+                const err = r.error ? `<br><span style="font-size:9px;color:#ff5252">${r.error}</span>` : '';
+                return `<div class="ping-row">
+                    <span style="color:${color};font-weight:700">${status} ${r.label}</span>
+                    <span class="ping-latency-inline">${latency}${http}</span>
+                    <div class="ping-url">${r.url}</div>${err}
+                </div>`;
+            }).join('');
+            body.innerHTML = rows;
+            await loadServerStatus();
+        } else {
+            body.innerHTML = '<div class="ping-row" style="color:#ff5252">❌ Gagal ping</div>';
+        }
+    } catch (e) {
+        body.innerHTML = `<div class="ping-row" style="color:#ff5252">❌ ${e.message}</div>`;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '📡 Ping Semua';
+    }
+});
+
+// ─── Tombol: Buka QRIS & Refresh ─────────────────────────────
+document.getElementById('btnBukaQris').addEventListener('click', () => {
+    chrome.tabs.create({ url: QRIS_HISTORI_URL });
+    window.close();
+});
+
+document.getElementById('btnRefresh').addEventListener('click', () => {
+    loadData();
+    loadServerStatus();
+});
+
+// ─── Tombol: Simpan URL ───────────────────────────────────────
 document.getElementById('btnSaveConfig').addEventListener('click', async () => {
     const btn = document.getElementById('btnSaveConfig');
     const feedback = document.getElementById('saveFeedback');
@@ -196,9 +276,8 @@ document.getElementById('btnSaveConfig').addEventListener('click', async () => {
     try {
         const result = await chrome.runtime.sendMessage({ type: 'SAVE_SERVER_CONFIG', config });
         if (result && result.ok) {
-            feedback.textContent = '✅ URL disimpan! Mendeteksi ulang...';
+            feedback.textContent = '✅ Tersimpan! Mendeteksi ulang...';
             feedback.className = 'save-feedback success';
-            // Auto-detect setelah simpan
             await chrome.runtime.sendMessage({ type: 'AUTO_DETECT' });
             await loadServerStatus();
         } else {
@@ -215,83 +294,7 @@ document.getElementById('btnSaveConfig').addEventListener('click', async () => {
     }
 });
 
-// ─── Ping Semua Server ────────────────────────────────────────
-document.getElementById('btnPing').addEventListener('click', async () => {
-    const btn = document.getElementById('btnPing');
-    const card = document.getElementById('pingResultCard');
-    const body = document.getElementById('pingResultBody');
-
-    btn.disabled = true;
-    btn.textContent = '⏳ Ping semua server...';
-    card.style.display = 'block';
-    body.innerHTML = '<div class="ping-row">⏳ Mengirim ping ke semua server...</div>';
-
-    try {
-        const result = await chrome.runtime.sendMessage({ type: 'PING_SERVER' });
-
-        if (result && result.ok) {
-            const rows = Object.values(result.results).map(r => {
-                const color = r.ok ? '#00e676' : '#ff5252';
-                const status = r.ok ? '✅' : '🔴';
-                const latency = r.latency !== undefined ? `${r.latency}ms` : '—';
-                const http = r.httpCode ? ` (HTTP ${r.httpCode})` : '';
-                const err = r.error ? `<br><span style="font-size:10px;color:#ff5252">${r.error}</span>` : '';
-                return `<div class="ping-row">
-                    <span style="color:${color};font-weight:700">${status} ${r.label}</span>
-                    <span class="ping-latency-inline">${latency}${http}</span>
-                    <div class="ping-url">${r.url}</div>${err}
-                </div>`;
-            }).join('');
-            body.innerHTML = rows;
-
-            // Update reachability di panel server juga
-            await loadServerStatus();
-        } else {
-            body.innerHTML = '<div class="ping-row" style="color:#ff5252">❌ Gagal ping</div>';
-        }
-    } catch (e) {
-        body.innerHTML = `<div class="ping-row" style="color:#ff5252">❌ ${e.message}</div>`;
-    } finally {
-        btn.disabled = false;
-        btn.textContent = '📡 Ping Semua Server';
-    }
-});
-
-// ─── Buka QRIS & Refresh ──────────────────────────────────────
-document.getElementById('btnBukaQris').addEventListener('click', () => {
-    chrome.tabs.create({ url: QRIS_HISTORI_URL });
-    window.close();
-});
-
-document.getElementById('btnRefresh').addEventListener('click', () => {
-    loadData();
-    loadServerStatus();
-});
-
-// ─── Timing Config ────────────────────────────────────────────
-const DEFAULT_TIMING = {
-    POLL_INTERVAL_MS: 5000,
-    RELOAD_NO_TRX_MIN: 14,
-    RELOAD_AFTER_TRX_MS: 30000,
-    MIN_RELOAD_GAP_MS: 25000
-};
-
-function updateTimingUI(cfg) {
-    document.getElementById('inputPollSec').value = Math.round((cfg.POLL_INTERVAL_MS || 5000) / 1000);
-    document.getElementById('inputReloadNoTrxMin').value = cfg.RELOAD_NO_TRX_MIN || 14;
-    document.getElementById('inputReloadAfterTrxSec').value = Math.round((cfg.RELOAD_AFTER_TRX_MS || 30000) / 1000);
-    document.getElementById('inputMinReloadGapSec').value = Math.round((cfg.MIN_RELOAD_GAP_MS || 25000) / 1000);
-}
-
-async function loadTimingConfig() {
-    try {
-        const { timingConfig } = await chrome.storage.local.get('timingConfig');
-        updateTimingUI(timingConfig || DEFAULT_TIMING);
-    } catch {
-        updateTimingUI(DEFAULT_TIMING);
-    }
-}
-
+// ─── Tombol: Simpan Timing ────────────────────────────────────
 document.getElementById('btnSaveTiming').addEventListener('click', async () => {
     const btn = document.getElementById('btnSaveTiming');
     const feedback = document.getElementById('timingFeedback');
@@ -312,9 +315,8 @@ document.getElementById('btnSaveTiming').addEventListener('click', async () => {
     btn.textContent = '⏳ Menyimpan...';
 
     try {
-        // Simpan ke storage — content.js akan otomatis update via storage.onChanged
         await chrome.storage.local.set({ timingConfig });
-        feedback.textContent = `✅ Tersimpan & langsung aktif di tab QRIS`;
+        feedback.textContent = '✅ Tersimpan & langsung aktif';
         feedback.className = 'save-feedback success';
     } catch (e) {
         feedback.textContent = '❌ ' + e.message;
@@ -324,18 +326,6 @@ document.getElementById('btnSaveTiming').addEventListener('click', async () => {
         btn.textContent = '⏱ Simpan Waktu';
         setTimeout(() => { feedback.textContent = ''; feedback.className = 'save-feedback'; }, 4000);
     }
-});
-
-// ─── Tab Navigation ─────────────────────────────────────────────
-document.querySelectorAll('.tab-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-        document.querySelectorAll('.view-content').forEach(c => c.classList.remove('active'));
-
-        btn.classList.add('active');
-        const targetId = btn.id === 'tabMonitor' ? 'viewMonitor' : 'viewSettings';
-        document.getElementById(targetId).classList.add('active');
-    });
 });
 
 // ─── Init ─────────────────────────────────────────────────────

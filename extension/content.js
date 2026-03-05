@@ -52,15 +52,25 @@ async function loadTimingConfig() {
 }
 
 // ── State ──────────────────────────────────────────────────────
-const knownUids = new Set();   // Set uid transaksi yang sudah dikirim
+// knownUids di-load dari sessionStorage agar tidak reset setelah reload
+const _knownRaw = sessionStorage.getItem('qris_known_uids');
+const knownUids = new Set(_knownRaw ? JSON.parse(_knownRaw) : []);
+
 let pollingTimer = null;
 let commandTimer = null;
 let reloadCheckTimer = null;
-let lastReloadTime = Date.now();
+
+// lastReloadTime juga di-persist ke sessionStorage
+const _lastReload = sessionStorage.getItem('qris_last_reload_time');
+let lastReloadTime = _lastReload ? parseInt(_lastReload, 10) : Date.now();
+
 let lastTrxTime = null;   // waktu terakhir ada transaksi baru
 let lastUrl = window.location.href;
 let reloadQueue = [];
 let isProcessingQueue = false;
+
+// Flag: sudah minta reload setelah trx? reset saat knownUids bersih
+let afterTrxReloadScheduled = false;
 
 // ── Helper ─────────────────────────────────────────────────────
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -216,6 +226,9 @@ function scrapeTransaksi() {
 
     if (baruList.length === 0) return; // semua sudah pernah dikirim
 
+    // Simpan knownUids ke sessionStorage (persist antar reload)
+    try { sessionStorage.setItem('qris_known_uids', JSON.stringify([...knownUids])); } catch { }
+
     log(`${baruList.length} transaksi baru dikirim ke server (total known: ${knownUids.size})`,
         baruList.map(t => `${t.nominal_raw} [${t.uid_hash.substring(0, 8)}]`));
 
@@ -228,11 +241,13 @@ function scrapeTransaksi() {
         batch: baruList
     });
 
-    // Jika ada transaksi baru, reload halaman setelah RELOAD_AFTER_TRX_MS
-    // agar data terbaru dari server QRIS tampil
-    if (CONFIG.RELOAD_AFTER_TRX_MS > 0) {
+    // Setelah ada transaksi baru, reload SATU KALI untuk refresh data
+    // Guard: jangan schedule ulang jika sudah ada pending reload
+    if (CONFIG.RELOAD_AFTER_TRX_MS > 0 && !afterTrxReloadScheduled) {
+        afterTrxReloadScheduled = true;
         setTimeout(() => {
-            // Hanya reload jika belum ada transaksi lagi dalam jeda itu
+            afterTrxReloadScheduled = false;
+            // Hanya reload jika tidak ada transaksi baru dalam window itu
             if (Date.now() - lastTrxTime >= CONFIG.RELOAD_AFTER_TRX_MS - 1000) {
                 enqueueReload('after_trx_refresh');
             }
@@ -299,6 +314,8 @@ async function processReloadQueue() {
         await sleep(humanDelay);
 
         lastReloadTime = Date.now();
+        // Persist lastReloadTime agar setelah reload tidak trigger langsung
+        try { sessionStorage.setItem('qris_last_reload_time', String(lastReloadTime)); } catch { }
         location.reload();
         return; // reload memutus eksekusi
     }
@@ -309,6 +326,10 @@ async function processReloadQueue() {
 function startAutoReloadCheck() {
     if (reloadCheckTimer) return;
     reloadCheckTimer = setInterval(() => {
+        // Sinkron lastReloadTime dari sessionStorage (mungkin diperbarui oleh reload)
+        const saved = sessionStorage.getItem('qris_last_reload_time');
+        if (saved) lastReloadTime = Math.max(lastReloadTime, parseInt(saved, 10));
+
         const elapsed = Date.now() - lastReloadTime;
         const targetMs = CONFIG.RELOAD_NO_TRX_MIN * 60 * 1000;
         const jitter = Math.random() * CONFIG.RELOAD_JITTER_MS;

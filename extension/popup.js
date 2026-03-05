@@ -5,7 +5,7 @@
 const QRIS_HISTORI_URL = 'https://merchant.qris.interactive.co.id/v2/m/kontenr.php?idir=pages/historytrx.php';
 
 const DEFAULT_SERVERS = {
-    local: { url: 'http://192.168.1.12:8000/api/qris' },
+    local: { url: 'http://192.168.1.8:8000/api/qris' },
     production: { url: 'https://alpakyros.com/api/qris' }
 };
 
@@ -274,11 +274,17 @@ document.getElementById('btnSaveConfig').addEventListener('click', async () => {
     btn.textContent = '⏳ Menyimpan...';
 
     try {
+        // SAVE_SERVER_CONFIG di background sekarang langsung verifikasi + re-detect
         const result = await chrome.runtime.sendMessage({ type: 'SAVE_SERVER_CONFIG', config });
         if (result && result.ok) {
-            feedback.textContent = '✅ Tersimpan! Mendeteksi ulang...';
+            feedback.textContent = '✅ Tersimpan & terdeteksi!';
             feedback.className = 'save-feedback success';
-            await chrome.runtime.sendMessage({ type: 'AUTO_DETECT' });
+
+            // Update tampilan server status dari hasil re-detect
+            if (result.reachability) {
+                updateServerStatus(config, result.reachability);
+            }
+            // Juga reload full status
             await loadServerStatus();
         } else {
             feedback.textContent = '❌ Gagal menyimpan';

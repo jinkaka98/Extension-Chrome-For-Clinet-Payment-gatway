@@ -5,15 +5,17 @@
 // =============================================================
 
 const API_KEY = 'AlpaKyros_QRIS_Monitor_2026';
-const PING_TIMEOUT_MS = 3000; // timeout cek server (3 detik)
+const PING_TIMEOUT_MS = 5000; // timeout cek server (5 detik — lebih longgar)
 
 // ── Konfigurasi Default Server ────────────────────────────────
+// CATATAN: IP ini akan di-override oleh config yang tersimpan di storage.
+// User bisa ganti URL lewat tab Pengaturan di popup.
 const DEFAULT_SERVERS = {
     local: {
         id: 'local',
         label: 'Local 🏠',
-        url: 'http://192.168.1.12:8000/api/qris',
-        enabled: true   // selalu dicoba, tapi aktif hanya kalau respond
+        url: 'http://192.168.1.8:8000/api/qris',
+        enabled: true
     },
     production: {
         id: 'production',
@@ -24,9 +26,19 @@ const DEFAULT_SERVERS = {
 };
 
 // ── Ambil konfigurasi server dari storage ─────────────────────
+// Selalu baca dari storage dulu; fallback ke DEFAULT hanya jika kosong.
 async function getServers() {
-    const { serverConfig } = await chrome.storage.local.get('serverConfig');
-    return serverConfig || DEFAULT_SERVERS;
+    try {
+        const { serverConfig } = await chrome.storage.local.get('serverConfig');
+        if (serverConfig && serverConfig.local && serverConfig.production) {
+            console.log('[QRIS BG] getServers: dari storage →', serverConfig.local.url, '|', serverConfig.production.url);
+            return serverConfig;
+        }
+    } catch (e) {
+        console.warn('[QRIS BG] getServers: gagal baca storage:', e.message);
+    }
+    console.log('[QRIS BG] getServers: pakai DEFAULT →', DEFAULT_SERVERS.local.url, '|', DEFAULT_SERVERS.production.url);
+    return DEFAULT_SERVERS;
 }
 
 // ── Cek apakah satu server reachable (dengan timeout) ─────────
@@ -49,7 +61,6 @@ async function checkServer(serverObj) {
         console.log(`[QRIS BG] Ping ${serverObj.id} → HTTP ${res.status}`);
 
         if (!res.ok) {
-            // Log body error jika ada
             try {
                 const errBody = await res.text();
                 console.warn(`[QRIS BG] Ping ${serverObj.id} error body:`, errBody.substring(0, 300));
@@ -66,6 +77,8 @@ async function checkServer(serverObj) {
 // ── Auto-detect: cek kedua server, update status di storage ───
 async function autoDetectServers() {
     const servers = await getServers();
+    console.log('[QRIS BG] Auto-detect dimulai. Local:', servers.local.url, '| Production:', servers.production.url);
+
     const checks = await Promise.all([
         checkServer(servers.local).then(ok => ({ id: 'local', reachable: ok })),
         checkServer(servers.production).then(ok => ({ id: 'production', reachable: ok }))
@@ -175,8 +188,6 @@ async function retryPendingQueue() {
     const gagalLagi = [];
 
     for (const item of pendingQueue) {
-        // Jika ada targetUrl spesifik, coba ke sana saja
-        // Jika tidak, broadcast ulang
         const urls = item.targetUrl ? [item.targetUrl] : await getActiveServerUrls();
         let berhasil = false;
 
@@ -297,7 +308,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             try { data = await res.json(); } catch { }
                             pingResults[srv.id] = { ok: true, latency, httpCode: res.status, url: srv.url, label: srv.label, serverData: data };
                         } else {
-                            pingResults[srv.id] = { ok: false, latency, httpCode: res.status, url: srv.url, label: srv.label, error: `HTTP ${res.status}` };
+                            let errText = `HTTP ${res.status}`;
+                            try { errText = (await res.text()).substring(0, 200); } catch { }
+                            pingResults[srv.id] = { ok: false, latency, httpCode: res.status, url: srv.url, label: srv.label, error: errText };
                         }
                     } catch (e) {
                         const latency = Math.round(performance.now() - startTimes[srv.id]);
@@ -319,12 +332,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 break;
             }
 
-            // Simpan konfigurasi URL server
+            // ── Simpan konfigurasi URL server ──────────────────────
+            // PENTING: Setelah save, LANGSUNG auto-detect dengan config baru
             case 'SAVE_SERVER_CONFIG': {
                 const config = message.config;
+                console.log('[QRIS BG] Simpan server config. Local:', config.local?.url, '| Production:', config.production?.url);
+
+                // Simpan ke storage
                 await chrome.storage.local.set({ serverConfig: config });
-                console.log('[QRIS BG] Server config disimpan. Local:', config.local.url, '| Production:', config.production.url);
-                sendResponse({ ok: true });
+
+                // Verifikasi tersimpan dengan benar
+                const verify = await chrome.storage.local.get('serverConfig');
+                if (verify.serverConfig?.local?.url === config.local?.url) {
+                    console.log('[QRIS BG] ✅ Config terverifikasi tersimpan:', verify.serverConfig.local.url);
+                } else {
+                    console.error('[QRIS BG] ❌ Config GAGAL tersimpan! Verify:', verify.serverConfig);
+                }
+
+                // Langsung re-detect dengan config baru
+                const reachability = await autoDetectServers();
+
+                sendResponse({ ok: true, reachability });
                 break;
             }
 
@@ -332,6 +360,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             case 'GET_SERVER_STATUS': {
                 const servers = await getServers();
                 const { serverReachability } = await chrome.storage.local.get('serverReachability');
+                console.log('[QRIS BG] GET_SERVER_STATUS →', servers.local.url, '| reachable:', serverReachability);
                 sendResponse({ ok: true, servers, reachability: serverReachability || null });
                 break;
             }
@@ -346,7 +375,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // ── Keepalive, Heartbeat & Auto-Detect Periodik ───────────────
 chrome.alarms.create('keepalive', { periodInMinutes: 1 });
-chrome.alarms.create('auto-detect', { periodInMinutes: 2 }); // cek ulang setiap 2 menit
+chrome.alarms.create('auto-detect', { periodInMinutes: 2 });
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
     if (alarm.name === 'keepalive') {
@@ -369,8 +398,15 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 
     await chrome.storage.local.set({ monitorStatus: 'starting' });
 
-    // Auto-detect saat service worker pertama aktif
-    console.log('[QRIS BG] Service Worker aktif — mendeteksi server...');
+    // Baca config yang tersimpan dan log
+    const servers = await getServers();
+    console.log('[QRIS BG] ═══════════════════════════════════════');
+    console.log('[QRIS BG] Service Worker AKTIF');
+    console.log('[QRIS BG] Local  URL:', servers.local.url);
+    console.log('[QRIS BG] Prod   URL:', servers.production.url);
+    console.log('[QRIS BG] ═══════════════════════════════════════');
+
+    // Auto-detect server
     await autoDetectServers();
     console.log('[QRIS BG] Siap. Mode: DUAL BROADCAST');
 })();

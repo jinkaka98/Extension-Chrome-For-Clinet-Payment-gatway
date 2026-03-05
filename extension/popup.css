@@ -29,10 +29,33 @@ body {
   font-family: 'Inter', sans-serif;
   background: var(--bg);
   color: var(--text);
-  width: 310px;
+  width: 420px;
   min-height: 200px;
   padding: 0 0 8px;
   font-size: 13px;
+}
+
+/* Layout dua kolom untuk cards */
+.two-col-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 8px;
+  padding: 8px 10px 0;
+}
+
+.two-col-cards .card {
+  margin: 0;
+}
+
+/* Jika card last-trx hidden, kolom pertama melebar penuh */
+.two-col-cards .card[style*="display:none"],
+.two-col-cards .card[style*="display: none"] {
+  display: none !important;
+  grid-column: unset;
+}
+
+.two-col-cards:has(.card:only-child) {
+  grid-template-columns: 1fr;
 }
 
 /* ── Header ────────────────────────────────────────────── */
@@ -120,6 +143,24 @@ body {
   padding: 4px 0;
 }
 
+/* Row info 2 kolom di dalam card */
+.row-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.row-grid .row {
+  border-top: none !important;
+}
+
+.row-grid .row:nth-child(n+3) {
+  border-top: 1px solid var(--border) !important;
+}
+
+.row-grid .row:nth-child(2n) {
+  border-left: 1px solid var(--border);
+}
+
 .row {
   display: flex;
   justify-content: space-between;
@@ -159,17 +200,21 @@ body {
   padding-bottom: 6px !important;
 }
 
+.server-rows-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
 .server-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
-  border-radius: 6px;
+  gap: 7px;
+  padding: 6px 10px;
   transition: background 0.2s;
 }
 
-.server-row+.server-row {
-  border-top: 1px solid var(--border);
+.server-rows-grid .server-row:last-child {
+  border-left: 1px solid var(--border);
 }
 
 .server-row.active {
@@ -254,6 +299,18 @@ body {
   padding: 8px 12px !important;
 }
 
+/* Dua setting card berdampingan */
+.settings-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 8px 10px 0;
+}
+
+.settings-row .card {
+  margin: 0;
+}
+
 .setting-group {
   margin-bottom: 7px;
 }
@@ -336,7 +393,7 @@ body {
 .timing-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  gap: 6px;
   margin-top: 4px;
 }
 
@@ -387,9 +444,14 @@ body {
 /* ── Buttons ────────────────────────────────────────────── */
 .actions {
   padding: 8px 10px 0;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 5px;
+}
+
+.actions .btn:first-child,
+.actions .btn:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
 }
 
 .btn {

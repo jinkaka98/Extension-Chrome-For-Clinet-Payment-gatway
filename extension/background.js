@@ -35,6 +35,7 @@ async function checkServer(serverObj) {
     const timer = setTimeout(() => controller.abort(), PING_TIMEOUT_MS);
 
     try {
+        console.log(`[QRIS BG] Ping ${serverObj.id} → ${serverObj.url}/ping`);
         const res = await fetch(`${serverObj.url}/ping`, {
             method: 'POST',
             headers: {
@@ -45,9 +46,19 @@ async function checkServer(serverObj) {
             signal: controller.signal
         });
         clearTimeout(timer);
+        console.log(`[QRIS BG] Ping ${serverObj.id} → HTTP ${res.status}`);
+
+        if (!res.ok) {
+            // Log body error jika ada
+            try {
+                const errBody = await res.text();
+                console.warn(`[QRIS BG] Ping ${serverObj.id} error body:`, errBody.substring(0, 300));
+            } catch { }
+        }
         return res.ok;
-    } catch {
+    } catch (e) {
         clearTimeout(timer);
+        console.warn(`[QRIS BG] Ping ${serverObj.id} EXCEPTION:`, e.message);
         return false;
     }
 }

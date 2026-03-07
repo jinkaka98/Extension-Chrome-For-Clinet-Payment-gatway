@@ -18,7 +18,7 @@ const CONFIG_DEFAULT = {
 
     // Reload (dapat diubah dari popup)
     RELOAD_NO_TRX_MIN: 14,    // reload jika TIDAK ada transaksi baru selama X menit
-    RELOAD_AFTER_TRX_MS: 30000, // reload setelah ada transaksi, tunggu X ms dulu
+    RELOAD_AFTER_TRX_MS: 8000,  // reload setelah ada transaksi, tunggu 8 detik dulu
     RELOAD_JITTER_MS: 60000,
     MIN_RELOAD_GAP_MS: 25000,
 
@@ -241,16 +241,14 @@ function scrapeTransaksi() {
         batch: baruList
     });
 
-    // Setelah ada transaksi baru, reload SATU KALI untuk refresh data
+    // Setelah ada transaksi baru, reload SATU KALI setelah RELOAD_AFTER_TRX_MS
     // Guard: jangan schedule ulang jika sudah ada pending reload
     if (CONFIG.RELOAD_AFTER_TRX_MS > 0 && !afterTrxReloadScheduled) {
         afterTrxReloadScheduled = true;
+        log(`Reload dijadwalkan dalam ${CONFIG.RELOAD_AFTER_TRX_MS / 1000}s setelah transaksi`);
         setTimeout(() => {
             afterTrxReloadScheduled = false;
-            // Hanya reload jika tidak ada transaksi baru dalam window itu
-            if (Date.now() - lastTrxTime >= CONFIG.RELOAD_AFTER_TRX_MS - 1000) {
-                enqueueReload('after_trx_refresh');
-            }
+            enqueueReload('after_trx_refresh'); // langsung reload, tidak ada kondisi tambahan
         }, CONFIG.RELOAD_AFTER_TRX_MS);
     }
 }

@@ -184,9 +184,15 @@ async function getFromServer(endpoint) {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
         try {
-            const res = await fetch(`${url}/${endpoint}`, {
+            // Cache-buster: LiteSpeed cache GET responses agresif
+            const cacheBuster = `_t=${Date.now()}`;
+            const separator = endpoint.includes('?') ? '&' : '?';
+            const res = await fetch(`${url}/${endpoint}${separator}${cacheBuster}`, {
                 method: 'GET',
-                headers: { 'X-Monitor-Key': API_KEY },
+                headers: {
+                    'X-Monitor-Key': API_KEY,
+                    'Cache-Control': 'no-cache, no-store'
+                },
                 signal: controller.signal
             });
             clearTimeout(timer);

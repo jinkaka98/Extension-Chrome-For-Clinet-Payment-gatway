@@ -72,6 +72,10 @@ let isProcessingQueue = false;
 // Flag: sudah minta reload setelah trx? reset saat knownUids bersih
 let afterTrxReloadScheduled = false;
 
+// Flag: apakah session login sudah pernah dicatat di cycle ini?
+// Mencegah duplikat login dan orphan logout
+let sessionLoginRecorded = false;
+
 // ── Helper ─────────────────────────────────────────────────────
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -152,11 +156,12 @@ function cekStatusHalaman() {
             type: 'SESSION_EXPIRED',
             timestamp: new Date().toISOString()
         });
-        // Log session logout event untuk history tracking
+        // Log session logout event (hanya jika sebelumnya pernah ada login)
         chrome.runtime.sendMessage({
             type: 'SESSION_LOGOUT',
             timestamp: new Date().toISOString()
         });
+        sessionLoginRecorded = false;
         stopSemua();
 
         // Auto-fill login credentials (akun staff monitor)
@@ -180,6 +185,19 @@ function cekStatusHalaman() {
 
     if (url.includes(CONFIG.URL_HISTORI)) {
         log('URL = HISTORI — mulai monitoring transaksi');
+
+        // Catat session login jika belum pernah dicatat di cycle ini
+        // Ini menangkap kasus: extension reload saat sudah login,
+        // atau pertama kali buka halaman histori
+        if (!sessionLoginRecorded) {
+            sessionLoginRecorded = true;
+            chrome.runtime.sendMessage({
+                type: 'SESSION_LOGIN',
+                timestamp: new Date().toISOString()
+            });
+            log('📝 Session login dicatat (dari halaman histori)');
+        }
+
         startScraping();
         startCommandPolling();
         startAutoReloadCheck();

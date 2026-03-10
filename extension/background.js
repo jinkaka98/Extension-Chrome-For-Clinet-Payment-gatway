@@ -384,6 +384,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             // ── Session History Log ──────────────────────────────
             case 'SESSION_LOGIN': {
                 const loginTime = message.timestamp || new Date().toISOString();
+
+                // Cek apakah sudah ada session aktif (mencegah duplikat saat reload)
+                const { currentSessionStart: existingStart } = await chrome.storage.local.get('currentSessionStart');
+                if (existingStart) {
+                    console.log('[QRIS BG] ⚠️ Session sudah aktif sejak', existingStart, '— skip duplikat login');
+                    sendResponse({ ok: true, skipped: true });
+                    break;
+                }
+
                 console.log('[QRIS BG] 📝 Session LOGIN dicatat:', loginTime);
 
                 // Simpan sebagai pending session (belum ada logout)
@@ -448,15 +457,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     // Clear current session
                     await chrome.storage.local.remove('currentSessionStart');
                 } else {
-                    // Tidak ada login tercatat, simpan logout saja
-                    sessionLog.push({
-                        id: Date.now(),
-                        loginAt: null,
-                        logoutAt: logoutTime,
-                        durationMs: null,
-                        durationText: null,
-                        status: 'expired_unknown'
-                    });
+                    // Tidak ada login tercatat, skip — jangan buat entry orphan
+                    console.log('[QRIS BG] ⚠️ Logout terdeteksi tapi tidak ada login sebelumnya, skip');
                 }
 
                 while (sessionLog.length > 50) sessionLog.shift();

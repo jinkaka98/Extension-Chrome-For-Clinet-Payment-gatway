@@ -100,6 +100,17 @@ async function autoDetectServers() {
     return statusMap;
 }
 
+// ── Periodic auto-detect: setiap 5 menit refresh serverReachability ──
+const AUTO_DETECT_INTERVAL_MS = 5 * 60 * 1000; // 5 menit
+setInterval(async () => {
+    console.log('[QRIS BG] Periodic auto-detect...');
+    try { await autoDetectServers(); } catch (e) {
+        console.warn('[QRIS BG] Periodic auto-detect gagal:', e.message);
+    }
+}, AUTO_DETECT_INTERVAL_MS);
+// Jalankan auto-detect saat extension dimuat
+setTimeout(() => { autoDetectServers().catch(() => { }); }, 3000);
+
 // ── Ambil daftar URL server yang aktif (reachable) ────────────
 async function getActiveServerUrls() {
     const servers = await getServers();
@@ -120,8 +131,12 @@ async function getActiveServerUrls() {
     return aktif;
 }
 
-// ── HTTP Helper: kirim ke SATU URL ───────────────────────────
+// ── HTTP Helper: kirim ke SATU URL (dengan timeout) ──────────
+const FETCH_TIMEOUT_MS = 5000; // 5 detik timeout per request
+
 async function kirimSatu(url, endpoint, payload) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
     try {
         const res = await fetch(`${url}/${endpoint}`, {
             method: 'POST',
@@ -129,11 +144,14 @@ async function kirimSatu(url, endpoint, payload) {
                 'Content-Type': 'application/json',
                 'X-Monitor-Key': API_KEY
             },
-            body: JSON.stringify({ ...payload, timestamp: new Date().toISOString() })
+            body: JSON.stringify({ ...payload, timestamp: new Date().toISOString() }),
+            signal: controller.signal
         });
+        clearTimeout(timer);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return { url, ok: true, data: await res.json() };
     } catch (e) {
+        clearTimeout(timer);
         return { url, ok: false, error: e.message };
     }
 }
@@ -159,18 +177,23 @@ async function kirimKeServer(endpoint, payload = {}) {
     return results;
 }
 
-// ── GET dari server (pakai server pertama yang aktif) ─────────
+// ── GET dari server (pakai server pertama yang aktif, dengan timeout) ──
 async function getFromServer(endpoint) {
     const urls = await getActiveServerUrls();
     for (const url of urls) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
         try {
             const res = await fetch(`${url}/${endpoint}`, {
                 method: 'GET',
-                headers: { 'X-Monitor-Key': API_KEY }
+                headers: { 'X-Monitor-Key': API_KEY },
+                signal: controller.signal
             });
+            clearTimeout(timer);
             if (res.ok) return await res.json();
         } catch {
-            // coba url berikutnya
+            clearTimeout(timer);
+            // timeout atau error → coba url berikutnya
         }
     }
     return null;

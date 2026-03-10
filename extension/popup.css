@@ -535,3 +535,194 @@ body {
   font-size: 9px;
   margin-top: 8px;
 }
+
+/* ── Session Log Tab ──────────────────────────────────────── */
+
+/* Summary Stats Grid */
+.session-summary {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  padding: 6px 12px 10px;
+}
+
+.summary-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.summary-value {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--cyan);
+}
+
+.summary-label {
+  font-size: 8px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+/* Active Session Indicator */
+.session-active-card {
+  padding: 8px 12px !important;
+  border-color: rgba(0, 230, 118, .3);
+  background: rgba(0, 230, 118, .06);
+}
+
+.session-active-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+}
+
+.session-active-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 6px var(--green);
+  animation: sessionPulse 1.5s infinite;
+  flex-shrink: 0;
+}
+
+@keyframes sessionPulse {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: .4;
+  }
+}
+
+.session-active-text {
+  flex: 1;
+  color: var(--text);
+}
+
+.session-active-elapsed {
+  font-weight: 700;
+  color: var(--green);
+  font-size: 11px;
+}
+
+/* History Table */
+.session-log-scroll {
+  max-height: 220px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.session-log-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+
+.session-log-scroll::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 2px;
+}
+
+.session-log-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 9px;
+}
+
+.session-log-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface);
+  color: var(--muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-size: 8px;
+  padding: 5px 8px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.session-log-table tbody td {
+  padding: 5px 8px;
+  border-bottom: 1px solid rgba(42, 45, 62, .4);
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.session-log-table tbody tr:nth-child(even) {
+  background: rgba(255, 255, 255, .015);
+}
+
+.session-log-table tbody tr:hover {
+  background: rgba(124, 58, 237, .06);
+}
+
+.session-log-empty {
+  text-align: center !important;
+  color: var(--muted) !important;
+  font-style: italic;
+  padding: 20px 8px !important;
+}
+
+/* Status Badges */
+.badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 99px;
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.badge-active {
+  background: rgba(0, 230, 118, .15);
+  color: var(--green);
+  border: 1px solid rgba(0, 230, 118, .3);
+}
+
+.badge-expired {
+  background: rgba(255, 215, 64, .12);
+  color: var(--yellow);
+  border: 1px solid rgba(255, 215, 64, .25);
+}
+
+.badge-unknown {
+  background: rgba(255, 82, 82, .12);
+  color: var(--red);
+  border: 1px solid rgba(255, 82, 82, .25);
+}
+
+/* Duration color-coded */
+.dur-short {
+  color: var(--green);
+  font-weight: 700;
+}
+
+.dur-medium {
+  color: var(--yellow);
+  font-weight: 700;
+}
+
+.dur-long {
+  color: var(--cyan);
+  font-weight: 700;
+}
+
+/* Danger Button */
+.btn-danger {
+  background: linear-gradient(135deg, #dc2626, #b91c1c);
+  color: #fff;
+}
+
+.btn-danger:hover {
+  opacity: .85;
+}

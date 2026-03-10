@@ -33,18 +33,6 @@ async function getServers() {
     try {
         const { serverConfig } = await chrome.storage.local.get('serverConfig');
         if (serverConfig && serverConfig.local && serverConfig.production) {
-            // ── Migrasi otomatis: jika masih pakai IP 192.168.x.x, ganti ke localhost
-            // Karena extension & backend ada di mesin yang sama (Armbian)
-            let migrated = false;
-            if (serverConfig.local.url && /192\.168\.\d+\.\d+/.test(serverConfig.local.url)) {
-                serverConfig.local.url = serverConfig.local.url.replace(/192\.168\.\d+\.\d+/, 'localhost');
-                migrated = true;
-            }
-            if (migrated) {
-                console.log('[QRIS BG] ⚡ Migrasi URL lokal → localhost:', serverConfig.local.url);
-                await chrome.storage.local.set({ serverConfig });
-            }
-
             console.log('[QRIS BG] getServers: dari storage →', serverConfig.local.url, '|', serverConfig.production.url);
             return serverConfig;
         }
@@ -224,6 +212,20 @@ async function retryPendingQueue() {
     if (terkirim > 0) console.log(`[QRIS BG] ${terkirim} pending berhasil dikirim ulang`);
 }
 
+// ── Format durasi ms → teks "Xj Xm Xd" ──────────────────────
+function formatDuration(ms) {
+    if (!ms || ms < 0) return '—';
+    const totalSec = Math.floor(ms / 1000);
+    const jam = Math.floor(totalSec / 3600);
+    const menit = Math.floor((totalSec % 3600) / 60);
+    const detik = totalSec % 60;
+    const parts = [];
+    if (jam > 0) parts.push(`${jam}j`);
+    if (menit > 0) parts.push(`${menit}m`);
+    parts.push(`${detik}d`);
+    return parts.join(' ');
+}
+
 // ── Listener dari content.js ──────────────────────────────────
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     (async () => {
@@ -376,6 +378,106 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 const { serverReachability } = await chrome.storage.local.get('serverReachability');
                 console.log('[QRIS BG] GET_SERVER_STATUS →', servers.local.url, '| reachable:', serverReachability);
                 sendResponse({ ok: true, servers, reachability: serverReachability || null });
+                break;
+            }
+
+            // ── Session History Log ──────────────────────────────
+            case 'SESSION_LOGIN': {
+                const loginTime = message.timestamp || new Date().toISOString();
+                console.log('[QRIS BG] 📝 Session LOGIN dicatat:', loginTime);
+
+                // Simpan sebagai pending session (belum ada logout)
+                await chrome.storage.local.set({
+                    currentSessionStart: loginTime
+                });
+
+                // Tambahkan entry "login" ke log (belum ada logoutAt)
+                const { sessionLog = [] } = await chrome.storage.local.get('sessionLog');
+                sessionLog.push({
+                    id: Date.now(),
+                    loginAt: loginTime,
+                    logoutAt: null,
+                    durationMs: null,
+                    durationText: null,
+                    status: 'active'
+                });
+
+                // Max 50 entries
+                while (sessionLog.length > 50) sessionLog.shift();
+                await chrome.storage.local.set({ sessionLog });
+
+                sendResponse({ ok: true });
+                break;
+            }
+
+            case 'SESSION_LOGOUT': {
+                const logoutTime = message.timestamp || new Date().toISOString();
+                console.log('[QRIS BG] 📝 Session LOGOUT dicatat:', logoutTime);
+
+                const { currentSessionStart } = await chrome.storage.local.get('currentSessionStart');
+                const { sessionLog = [] } = await chrome.storage.local.get('sessionLog');
+
+                if (currentSessionStart) {
+                    // Hitung durasi
+                    const loginDate = new Date(currentSessionStart);
+                    const logoutDate = new Date(logoutTime);
+                    const durationMs = logoutDate - loginDate;
+                    const durationText = formatDuration(durationMs);
+
+                    console.log(`[QRIS BG] 📊 Durasi session: ${durationText} (${durationMs}ms)`);
+
+                    // Cari entry terakhir yang masih "active" dan update
+                    const lastActive = [...sessionLog].reverse().find(e => e.status === 'active');
+                    if (lastActive) {
+                        lastActive.logoutAt = logoutTime;
+                        lastActive.durationMs = durationMs;
+                        lastActive.durationText = durationText;
+                        lastActive.status = 'expired';
+                    } else {
+                        // Tidak ada entry active, buat baru (fallback)
+                        sessionLog.push({
+                            id: Date.now(),
+                            loginAt: currentSessionStart,
+                            logoutAt: logoutTime,
+                            durationMs,
+                            durationText,
+                            status: 'expired'
+                        });
+                    }
+
+                    // Clear current session
+                    await chrome.storage.local.remove('currentSessionStart');
+                } else {
+                    // Tidak ada login tercatat, simpan logout saja
+                    sessionLog.push({
+                        id: Date.now(),
+                        loginAt: null,
+                        logoutAt: logoutTime,
+                        durationMs: null,
+                        durationText: null,
+                        status: 'expired_unknown'
+                    });
+                }
+
+                while (sessionLog.length > 50) sessionLog.shift();
+                await chrome.storage.local.set({ sessionLog });
+
+                sendResponse({ ok: true });
+                break;
+            }
+
+            case 'GET_SESSION_LOG': {
+                const { sessionLog = [] } = await chrome.storage.local.get('sessionLog');
+                const { currentSessionStart = null } = await chrome.storage.local.get('currentSessionStart');
+                sendResponse({ ok: true, sessionLog, currentSessionStart });
+                break;
+            }
+
+            case 'CLEAR_SESSION_LOG': {
+                await chrome.storage.local.set({ sessionLog: [] });
+                await chrome.storage.local.remove('currentSessionStart');
+                console.log('[QRIS BG] 🗑 Session log dihapus');
+                sendResponse({ ok: true });
                 break;
             }
 

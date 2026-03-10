@@ -152,6 +152,11 @@ function cekStatusHalaman() {
             type: 'SESSION_EXPIRED',
             timestamp: new Date().toISOString()
         });
+        // Log session logout event untuk history tracking
+        chrome.runtime.sendMessage({
+            type: 'SESSION_LOGOUT',
+            timestamp: new Date().toISOString()
+        });
         stopSemua();
 
         // Auto-fill login credentials (akun staff monitor)
@@ -162,6 +167,11 @@ function cekStatusHalaman() {
     if (url.includes(CONFIG.URL_VERIFIKASI)) {
         log('URL = VERIFIKASI — baru selesai login, redirect ke histori...');
         chrome.runtime.sendMessage({ type: 'SUDAH_LOGIN' });
+        // Log session login event untuk history tracking
+        chrome.runtime.sendMessage({
+            type: 'SESSION_LOGIN',
+            timestamp: new Date().toISOString()
+        });
         setTimeout(() => {
             window.location.href = CONFIG.URL_REDIRECT;
         }, 1500);

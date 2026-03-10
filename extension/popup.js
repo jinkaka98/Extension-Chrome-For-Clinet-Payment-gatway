@@ -17,13 +17,21 @@ const DEFAULT_TIMING = {
 };
 
 // ─── Tab Navigation ──────────────────────────────────────────
+const TAB_MAP = {
+    tabMonitor: 'viewMonitor',
+    tabSettings: 'viewSettings',
+    tabSessionLog: 'viewSessionLog'
+};
+
 document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
         document.querySelectorAll('.view-content').forEach(c => c.classList.remove('active'));
         btn.classList.add('active');
-        const id = btn.id === 'tabMonitor' ? 'viewMonitor' : 'viewSettings';
-        document.getElementById(id).classList.add('active');
+        const viewId = TAB_MAP[btn.id];
+        if (viewId) document.getElementById(viewId).classList.add('active');
+        // Auto-load session log saat tab dibuka
+        if (btn.id === 'tabSessionLog') loadSessionLog();
     });
 });
 
@@ -334,7 +342,139 @@ document.getElementById('btnSaveTiming').addEventListener('click', async () => {
     }
 });
 
+// ─── Session Log: Format Helpers ───────────────────────────────
+function formatDurationPopup(ms) {
+    if (!ms || ms < 0) return '—';
+    const totalSec = Math.floor(ms / 1000);
+    const jam = Math.floor(totalSec / 3600);
+    const menit = Math.floor((totalSec % 3600) / 60);
+    const detik = totalSec % 60;
+    const parts = [];
+    if (jam > 0) parts.push(`${jam}j`);
+    if (menit > 0) parts.push(`${menit}m`);
+    parts.push(`${detik}d`);
+    return parts.join(' ');
+}
+
+function getDurationClass(ms) {
+    if (!ms) return '';
+    const menit = ms / 60000;
+    if (menit < 15) return 'dur-short';       // < 15 mnt = hijau (pendek)
+    if (menit < 60) return 'dur-medium';      // 15-60 mnt = kuning
+    return 'dur-long';                        // > 60 mnt = cyan (lama)
+}
+
+function formatLogTime(isoStr) {
+    if (!isoStr) return '—';
+    const d = new Date(isoStr);
+    return d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) +
+        '\n' + d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: '2-digit' });
+}
+
+function getStatusBadge(status) {
+    switch (status) {
+        case 'active': return '<span class="badge badge-active">AKTIF</span>';
+        case 'expired': return '<span class="badge badge-expired">EXPIRED</span>';
+        case 'expired_unknown': return '<span class="badge badge-unknown">???</span>';
+        default: return '<span class="badge">' + status + '</span>';
+    }
+}
+
+// ─── Session Log: Load & Render ─────────────────────────────────
+let activeSessionTimer = null;
+
+async function loadSessionLog() {
+    try {
+        const result = await chrome.runtime.sendMessage({ type: 'GET_SESSION_LOG' });
+        if (!result || !result.ok) return;
+
+        const log = result.sessionLog || [];
+        const currentStart = result.currentSessionStart;
+        const tbody = document.getElementById('sessionLogBody');
+
+        // === Active Session Indicator ===
+        const activeCard = document.getElementById('activeSessionCard');
+        if (activeSessionTimer) { clearInterval(activeSessionTimer); activeSessionTimer = null; }
+
+        if (currentStart) {
+            activeCard.style.display = 'block';
+            const startDate = new Date(currentStart);
+            document.getElementById('activeSessionSince').textContent =
+                startDate.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+
+            const updateElapsed = () => {
+                const elapsed = Date.now() - startDate.getTime();
+                document.getElementById('activeSessionElapsed').textContent = formatDurationPopup(elapsed);
+            };
+            updateElapsed();
+            activeSessionTimer = setInterval(updateElapsed, 1000);
+        } else {
+            activeCard.style.display = 'none';
+        }
+
+        // === Tabel History ===
+        if (log.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" class="session-log-empty">Belum ada data session</td></tr>';
+        } else {
+            // Terbaru di atas
+            const sorted = [...log].reverse();
+            tbody.innerHTML = sorted.map(entry => {
+                const durClass = getDurationClass(entry.durationMs);
+                const durText = entry.durationText || formatDurationPopup(entry.durationMs);
+                return `<tr>
+                    <td style="white-space:pre-line">${formatLogTime(entry.loginAt)}</td>
+                    <td style="white-space:pre-line">${formatLogTime(entry.logoutAt)}</td>
+                    <td class="${durClass}">${durText}</td>
+                    <td>${getStatusBadge(entry.status)}</td>
+                </tr>`;
+            }).join('');
+        }
+
+        // === Summary Stats ===
+        const completed = log.filter(e => e.durationMs && e.durationMs > 0);
+        document.getElementById('totalSessions').textContent = log.length;
+
+        if (completed.length > 0) {
+            const durations = completed.map(e => e.durationMs);
+            const avg = durations.reduce((a, b) => a + b, 0) / durations.length;
+            const min = Math.min(...durations);
+            const max = Math.max(...durations);
+
+            document.getElementById('avgDuration').textContent = formatDurationPopup(avg);
+            document.getElementById('minDuration').textContent = formatDurationPopup(min);
+            document.getElementById('maxDuration').textContent = formatDurationPopup(max);
+        } else {
+            document.getElementById('avgDuration').textContent = '—';
+            document.getElementById('minDuration').textContent = '—';
+            document.getElementById('maxDuration').textContent = '—';
+        }
+
+    } catch (e) {
+        console.error('[Popup] loadSessionLog error:', e);
+    }
+}
+
+// ─── Tombol: Hapus Log ────────────────────────────────────────
+document.getElementById('btnClearLog').addEventListener('click', async () => {
+    if (!confirm('Hapus semua log session? Data tidak bisa dikembalikan.')) return;
+
+    const btn = document.getElementById('btnClearLog');
+    btn.disabled = true;
+    btn.textContent = '⏳ Menghapus...';
+
+    try {
+        await chrome.runtime.sendMessage({ type: 'CLEAR_SESSION_LOG' });
+        await loadSessionLog();
+    } catch (e) {
+        console.error(e);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🗑 Hapus Semua Log';
+    }
+});
+
 // ─── Init ─────────────────────────────────────────────────────
 loadData();
 loadServerStatus();
 loadTimingConfig();
+loadSessionLog();

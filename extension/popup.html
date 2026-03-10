@@ -20,6 +20,7 @@
   <div class="tabs">
     <button id="tabMonitor" class="tab-btn active">📊 Monitoring</button>
     <button id="tabSettings" class="tab-btn">⚙️ Pengaturan</button>
+    <button id="tabSessionLog" class="tab-btn">📜 Session Log</button>
   </div>
 
   <!-- ============================================================
@@ -175,8 +176,74 @@
 
   </div>
 
+  <!-- ============================================================
+       TAB 3: SESSION LOG
+  ============================================================ -->
+  <div id="viewSessionLog" class="view-content">
+
+    <!-- Summary Stats -->
+    <div class="card" style="margin-top:8px">
+      <div class="card-label">📊 Ringkasan Session</div>
+      <div class="session-summary">
+        <div class="summary-item">
+          <span class="summary-value" id="avgDuration">—</span>
+          <span class="summary-label">Rata-rata</span>
+        </div>
+        <div class="summary-item">
+          <span class="summary-value" id="minDuration">—</span>
+          <span class="summary-label">Terpendek</span>
+        </div>
+        <div class="summary-item">
+          <span class="summary-value" id="maxDuration">—</span>
+          <span class="summary-label">Terlama</span>
+        </div>
+        <div class="summary-item">
+          <span class="summary-value highlight" id="totalSessions">0</span>
+          <span class="summary-label">Total Session</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Active Session Indicator -->
+    <div class="card session-active-card" id="activeSessionCard" style="display:none;margin-top:8px">
+      <div class="session-active-row">
+        <span class="session-active-dot"></span>
+        <span class="session-active-text">Session aktif sejak <strong id="activeSessionSince">—</strong></span>
+        <span class="session-active-elapsed" id="activeSessionElapsed">—</span>
+      </div>
+    </div>
+
+    <!-- History Table -->
+    <div class="card" style="margin-top:8px;padding:0!important">
+      <div class="card-label" style="padding:7px 12px 5px">📜 Riwayat Login / Logout</div>
+      <div class="session-log-scroll">
+        <table class="session-log-table">
+          <thead>
+            <tr>
+              <th>Login</th>
+              <th>Logout</th>
+              <th>Durasi</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="sessionLogBody">
+            <tr>
+              <td colspan="4" class="session-log-empty">Belum ada data session</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="actions" style="grid-template-columns:1fr">
+      <button id="btnClearLog" class="btn btn-danger">🗑 Hapus Semua Log</button>
+    </div>
+
+  </div>
+
   <!-- FOOTER -->
-  <div class="footer">v1.1.0 &bull; <span id="lastUpdate">—</span></div>
+  <div class="footer">v1.2.0 &bull; <span id="lastUpdate">—</span></div>
 
   <script src="popup.js"></script>
 </body>

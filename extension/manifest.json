@@ -6,7 +6,8 @@
   "permissions": [
     "storage",
     "alarms",
-    "tabs"
+    "tabs",
+    "system.network"
   ],
   "host_permissions": [
     "https://merchant.qris.interactive.co.id/*",

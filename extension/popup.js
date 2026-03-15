@@ -196,16 +196,61 @@ async function loadTimingConfig() {
 // ─── Tombol: Deteksi Ulang Server ────────────────────────────
 document.getElementById('btnDetect').addEventListener('click', async () => {
     const btn = document.getElementById('btnDetect');
+    const scanCard = document.getElementById('scanResultCard');
+    const scanBody = document.getElementById('scanResultBody');
+
     btn.disabled = true;
-    btn.textContent = '⏳ Mendeteksi...';
+    btn.textContent = '🌐 Scanning jaringan...';
     updateServerStatus(null, null);
+
+    // Show scan card with loading state
+    scanCard.style.display = 'block';
+    scanBody.innerHTML = '<div style="color:#ffd740">⏳ Mendeteksi network interfaces & scanning subnet...</div>';
+
     try {
         const result = await chrome.runtime.sendMessage({ type: 'AUTO_DETECT' });
-        if (result && result.ok) await loadServerStatus();
-    } catch (e) { console.error(e); }
+        if (result && result.ok) {
+            // Update server status panel
+            if (result.servers) {
+                updateServerStatus(result.servers, result.reachability);
+                document.getElementById('inputLocalUrl').value = result.servers?.local?.url || DEFAULT_SERVERS.local.url;
+                document.getElementById('inputProductionUrl').value = result.servers?.production?.url || DEFAULT_SERVERS.production.url;
+            } else {
+                await loadServerStatus();
+            }
+
+            // Build scan result display
+            let html = '';
+            const localOk = result.reachability?.local;
+            const prodOk = result.reachability?.production;
+
+            if (result.autoDiscovered) {
+                html += `<div style="color:#00e676;font-weight:700">🎯 Server ditemukan!</div>`;
+                html += `<div style="color:#90caf9;margin:2px 0">📍 ${result.autoDiscovered}</div>`;
+                html += `<div style="color:#aaa">Config local auto-updated ✅</div>`;
+                btn.textContent = '✅ Ditemukan!';
+            } else if (localOk) {
+                html += `<div style="color:#00e676">✅ Local server aktif di URL tersimpan</div>`;
+            } else {
+                html += `<div style="color:#ff5252">❌ Server lokal tidak ditemukan di jaringan</div>`;
+                html += `<div style="color:#aaa;font-size:10px;margin-top:2px">Pastikan backend (php run dev) sedang berjalan</div>`;
+            }
+
+            html += `<div style="margin-top:4px;border-top:1px solid #333;padding-top:4px;">`;
+            html += `<span style="color:${prodOk ? '#00e676' : '#ff5252'}">${prodOk ? '✅' : '🔴'} Production</span>`;
+            html += `</div>`;
+
+            scanBody.innerHTML = html;
+        }
+    } catch (e) {
+        scanBody.innerHTML = `<div style="color:#ff5252">❌ Error: ${e.message}</div>`;
+        console.error(e);
+    }
     finally {
-        btn.disabled = false;
-        btn.textContent = '🔍 Deteksi Server';
+        setTimeout(() => {
+            btn.disabled = false;
+            btn.textContent = '🔍 Deteksi Server';
+        }, 2000);
     }
 });
 

@@ -6,6 +6,8 @@
 
 const API_KEY = 'AlpaKyros_QRIS_Monitor_2026';
 const PING_TIMEOUT_MS = 5000; // timeout cek server (5 detik — lebih longgar)
+const SCAN_TIMEOUT_MS = 1500; // timeout per-IP saat LAN scan (cepat)
+const SCAN_PORT = 8000;
 
 // ── Konfigurasi Default Server ────────────────────────────────
 // CATATAN: IP ini akan di-override oleh config yang tersimpan di storage.
@@ -76,8 +78,122 @@ async function checkServer(serverObj) {
     }
 }
 
+// ── LAN Auto-Scan: probe IP:8000 untuk cari backend ──────────
+// Fully dynamic: detect network interfaces → derive subnets → scan
+async function scanSingleIP(ip) {
+    const url = `http://${ip}:${SCAN_PORT}/api/qris`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), SCAN_TIMEOUT_MS);
+    try {
+        const res = await fetch(`${url}/ping`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Monitor-Key': API_KEY },
+            body: JSON.stringify({ ping: true, scan: true }),
+            signal: controller.signal
+        });
+        clearTimeout(timer);
+        if (res.ok) {
+            console.log(`[QRIS BG] ✅ LAN scan: found server at ${ip}:${SCAN_PORT}`);
+            return { ip, url, ok: true };
+        }
+        return { ip, url, ok: false };
+    } catch {
+        clearTimeout(timer);
+        return { ip, url, ok: false };
+    }
+}
+
+// Derive subnet prefix from an IP address (e.g., "192.168.1.12" → "192.168.1")
+function getSubnetPrefix(ip) {
+    const parts = ip.split('.');
+    if (parts.length === 4) return `${parts[0]}.${parts[1]}.${parts[2]}`;
+    return null;
+}
+
+// Detect local network interfaces via Chrome API → return unique subnet prefixes
+async function detectSubnets() {
+    const subnets = new Set();
+
+    try {
+        if (chrome.system && chrome.system.network && chrome.system.network.getNetworkInterfaces) {
+            const interfaces = await new Promise((resolve, reject) => {
+                chrome.system.network.getNetworkInterfaces((ifaces) => {
+                    if (chrome.runtime.lastError) {
+                        reject(chrome.runtime.lastError);
+                    } else {
+                        resolve(ifaces || []);
+                    }
+                });
+            });
+
+            console.log(`[QRIS BG] 🌐 Network interfaces detected: ${interfaces.length}`);
+            for (const iface of interfaces) {
+                // Only IPv4 addresses (skip IPv6, loopback, link-local)
+                if (iface.address && iface.address.includes('.') &&
+                    !iface.address.startsWith('127.') &&
+                    !iface.address.startsWith('169.254.')) {
+                    const prefix = getSubnetPrefix(iface.address);
+                    if (prefix) {
+                        subnets.add(prefix);
+                        console.log(`[QRIS BG]   → Interface: ${iface.name || '?'} = ${iface.address} → subnet ${prefix}.*`);
+                    }
+                }
+            }
+        }
+    } catch (e) {
+        console.warn('[QRIS BG] ⚠️ chrome.system.network failed:', e.message);
+    }
+
+    // If no subnets detected (API unavailable), add common defaults as fallback
+    if (subnets.size === 0) {
+        console.log('[QRIS BG] ⚠️ No interfaces detected, using fallback subnets');
+        subnets.add('192.168.1');
+        subnets.add('192.168.0');
+    }
+
+    return [...subnets];
+}
+
+async function scanLAN() {
+    console.log('[QRIS BG] 🔍 Smart LAN scan dimulai...');
+
+    // Step 1: Detect actual subnets from network interfaces
+    const subnets = await detectSubnets();
+    console.log(`[QRIS BG] 📡 Subnets to scan: ${subnets.join(', ')}`);
+
+    // Step 2: Build candidate list from detected subnets
+    const candidates = ['127.0.0.1', 'localhost'];
+
+    for (const subnet of subnets) {
+        // Full range: 1-254 for each detected subnet
+        for (let host = 1; host <= 254; host++) {
+            candidates.push(`${subnet}.${host}`);
+        }
+    }
+
+    console.log(`[QRIS BG] 🎯 Total candidates: ${candidates.length} IPs across ${subnets.length} subnet(s)`);
+
+    // Step 3: Scan in batches (20 parallel for speed)
+    const BATCH_SIZE = 20;
+    let scanned = 0;
+    for (let i = 0; i < candidates.length; i += BATCH_SIZE) {
+        const batch = candidates.slice(i, i + BATCH_SIZE);
+        const results = await Promise.all(batch.map(ip => scanSingleIP(ip)));
+        scanned += batch.length;
+        const found = results.find(r => r.ok);
+        if (found) {
+            console.log(`[QRIS BG] 🎯 LAN scan berhasil! Server ditemukan di: ${found.url} (scanned ${scanned} IPs)`);
+            return found;
+        }
+    }
+
+    console.log(`[QRIS BG] ❌ LAN scan selesai — tidak menemukan server (scanned ${scanned} IPs)`);
+    return null;
+}
+
 // ── Auto-detect: cek kedua server, update status di storage ───
-async function autoDetectServers() {
+//    Sekarang dengan LAN scan fallback jika local gagal.
+async function autoDetectServers(enableLanScan = false) {
     const servers = await getServers();
     console.log('[QRIS BG] Auto-detect dimulai. Local:', servers.local.url, '| Production:', servers.production.url);
 
@@ -91,10 +207,28 @@ async function autoDetectServers() {
         statusMap[c.id] = c.reachable;
     }
 
+    // Jika local TIDAK reachable DAN LAN scan diaktifkan → cari otomatis
+    if (!statusMap.local && enableLanScan) {
+        console.log('[QRIS BG] Local offline → memulai LAN scan otomatis...');
+        const found = await scanLAN();
+        if (found) {
+            // Update server config dengan IP baru
+            const newConfig = {
+                local: { id: 'local', label: 'Local 🏠', url: found.url, enabled: true },
+                production: servers.production
+            };
+            await chrome.storage.local.set({ serverConfig: newConfig });
+            statusMap.local = true;
+            statusMap._autoDiscovered = found.url;
+            console.log(`[QRIS BG] 🔄 Config local auto-updated ke: ${found.url}`);
+        }
+    }
+
     // Simpan hasil deteksi ke storage
     await chrome.storage.local.set({ serverReachability: statusMap });
 
     const aktif = checks.filter(c => c.reachable).map(c => c.id);
+    if (statusMap._autoDiscovered) aktif.push('local(auto-discovered)');
     console.log('[QRIS BG] Auto-detect selesai. Aktif:', aktif.length > 0 ? aktif.join(' + ') : 'tidak ada');
 
     return statusMap;
@@ -323,11 +457,45 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 break;
             }
 
-            // Jalankan auto-detect manual dari popup
+            // Jalankan auto-detect manual dari popup (dengan LAN scan)
             case 'AUTO_DETECT': {
-                console.log('[QRIS BG] Auto-detect dipicu manual...');
-                const reachability = await autoDetectServers();
-                sendResponse({ ok: true, reachability });
+                console.log('[QRIS BG] Auto-detect dipicu manual (dengan LAN scan)...');
+                const reachability = await autoDetectServers(true); // enable LAN scan
+                const updatedServers = await getServers();
+                sendResponse({
+                    ok: true,
+                    reachability,
+                    servers: updatedServers,
+                    autoDiscovered: reachability._autoDiscovered || null
+                });
+                break;
+            }
+
+            // LAN Scan manual (scan only, tanpa auto-detect)
+            case 'LAN_SCAN': {
+                console.log('[QRIS BG] LAN scan manual dipicu...');
+                const scanResult = await scanLAN();
+                if (scanResult) {
+                    // Auto-update config
+                    const currentServers = await getServers();
+                    const newConfig = {
+                        local: { id: 'local', label: 'Local 🏠', url: scanResult.url, enabled: true },
+                        production: currentServers.production
+                    };
+                    await chrome.storage.local.set({ serverConfig: newConfig });
+                    // Re-detect with new config
+                    const newReachability = await autoDetectServers(false);
+                    sendResponse({
+                        ok: true,
+                        found: true,
+                        discoveredUrl: scanResult.url,
+                        discoveredIp: scanResult.ip,
+                        servers: newConfig,
+                        reachability: newReachability
+                    });
+                } else {
+                    sendResponse({ ok: true, found: false });
+                }
                 break;
             }
 

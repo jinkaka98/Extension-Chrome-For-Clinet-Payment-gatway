@@ -106,7 +106,8 @@ function updateUI(data) {
 function updateServerStatus(servers, reachability) {
     const list = [
         { id: 'local', label: 'Local 🏠' },
-        { id: 'production', label: 'Production 🌐' }
+        { id: 'production', label: 'Production 🌐' },
+        { id: 'supabase', label: 'Supabase ☁️' }
     ];
 
     let activeCount = 0;
@@ -117,9 +118,12 @@ function updateServerStatus(servers, reachability) {
         const urlEl = document.getElementById(`url${capitalize(srv.id)}`);
         const row = document.getElementById(`row${capitalize(srv.id)}`);
 
-        const url = servers?.[srv.id]?.url || DEFAULT_SERVERS[srv.id].url;
-        urlEl.textContent = url;
-        urlEl.title = url;
+        const defaultUrl = srv.id === 'supabase' ? 'Direct Database' : DEFAULT_SERVERS[srv.id].url;
+        const url = servers?.[srv.id]?.url || defaultUrl;
+        if (urlEl) {
+            urlEl.textContent = url;
+            urlEl.title = url;
+        }
 
         if (!reachability) {
             dot.className = 'server-dot unknown';
@@ -131,7 +135,7 @@ function updateServerStatus(servers, reachability) {
             state.textContent = '✅ Aktif';
             state.style.color = '#00e676';
             row.className = 'server-row active';
-            activeCount++;
+            if (srv.id !== 'supabase') activeCount++;
         } else {
             dot.className = 'server-dot offline';
             state.textContent = '🔴 Offline';

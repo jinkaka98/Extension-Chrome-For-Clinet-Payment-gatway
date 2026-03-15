@@ -112,6 +112,27 @@ async function insertMonitorLogSupabase(event, payload = {}) {
     }
 }
 
+// ── Health check Supabase direct untuk status popup ───────────
+async function checkSupabaseHealth() {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), PING_TIMEOUT_MS);
+    try {
+        const res = await fetch(
+            `${SUPABASE_URL}/rest/v1/qris_monitor_logs?select=id&limit=1`,
+            {
+                method: 'GET',
+                headers: { ...SUPABASE_HEADERS, 'Prefer': 'return=representation' },
+                signal: controller.signal
+            }
+        );
+        return res.ok;
+    } catch {
+        return false;
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
 const API_KEY = 'AlpaKyros_QRIS_Monitor_2026';
 const PING_TIMEOUT_MS = 5000; // timeout cek server (5 detik — lebih longgar)
 const SCAN_TIMEOUT_MS = 1500; // timeout per-IP saat LAN scan (cepat)
@@ -307,7 +328,8 @@ async function autoDetectServers(enableLanScan = false) {
 
     const checks = await Promise.all([
         checkServer(servers.local).then(ok => ({ id: 'local', reachable: ok })),
-        checkServer(servers.production).then(ok => ({ id: 'production', reachable: ok }))
+        checkServer(servers.production).then(ok => ({ id: 'production', reachable: ok })),
+        checkSupabaseHealth().then(ok => ({ id: 'supabase', reachable: ok }))
     ]);
 
     const statusMap = {};
@@ -657,11 +679,34 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
                 await Promise.all(pings);
 
+                // Ping Supabase direct
+                try {
+                    const t0 = performance.now();
+                    const ok = await checkSupabaseHealth();
+                    const latency = Math.round(performance.now() - t0);
+                    pingResults.supabase = {
+                        ok,
+                        latency,
+                        url: `${SUPABASE_URL}/rest/v1`,
+                        label: 'Supabase ☁️',
+                        error: ok ? undefined : 'Supabase tidak merespons'
+                    };
+                } catch (e) {
+                    pingResults.supabase = {
+                        ok: false,
+                        latency: 0,
+                        url: `${SUPABASE_URL}/rest/v1`,
+                        label: 'Supabase ☁️',
+                        error: e?.message || 'Supabase ping gagal'
+                    };
+                }
+
                 // Update reachability berdasarkan hasil ping
                 await chrome.storage.local.set({
                     serverReachability: {
                         local: pingResults.local?.ok || false,
-                        production: pingResults.production?.ok || false
+                        production: pingResults.production?.ok || false,
+                        supabase: pingResults.supabase?.ok || false
                     }
                 });
 

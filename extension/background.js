@@ -2,7 +2,115 @@
 // BACKGROUND SERVICE WORKER — QRIS Payment Monitor
 // DUAL BROADCAST MODE: kirim ke semua server aktif secara paralel
 // Jika Local + Production keduanya online → keduanya menerima data
+//
+// ── SUPABASE DIRECT LAYER ────────────────────────────────────
+// Primary path: Extension → Supabase REST API (langsung, tanpa hosting)
+// Fallback: broadcast ke PHP backend (local + production) seperti biasa
+// Ini memastikan alur QRIS tetap berjalan meski hosting down.
 // =============================================================
+
+// ── Supabase Direct Config ────────────────────────────────────
+const SUPABASE_URL = 'https://odmpufoqwhdorxhxcokr.supabase.co';
+const SUPABASE_SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9kbXB1Zm9xd2hkb3J4aHhjb2tyIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTU4MDg3OSwiZXhwIjoyMDg1MTU2ODc5fQ.DJ9GZswvgmCqfH2D-nSqIw2nqVEFJbUaJ4vGbgs98HA';
+
+const SUPABASE_HEADERS = {
+    'apikey': SUPABASE_SERVICE_KEY,
+    'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+    'Content-Type': 'application/json',
+    'Prefer': 'return=minimal'
+};
+
+// ── Kirim satu transaksi langsung ke Supabase via RPC ────────
+async function kirimTransaksiKeSupabase(transaksi) {
+    try {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/proses_qris_transaksi`, {
+            method: 'POST',
+            headers: SUPABASE_HEADERS,
+            body: JSON.stringify({
+                _nominal: parseInt(transaksi.nominal, 10) || 0,
+                _uid_hash: transaksi.uid_hash || null,
+                _nama: transaksi.nama || null,
+                _metode: transaksi.metode || 'QRIS',
+                _kode_ref: transaksi.kode_ref || null
+            })
+        });
+        if (!res.ok) {
+            const errText = await res.text().catch(() => 'unknown');
+            console.warn('[QRIS SB] transaksi RPC error:', res.status, errText.substring(0, 200));
+            return { ok: false, error: `HTTP ${res.status}` };
+        }
+        const data = await res.json().catch(() => ({}));
+        console.log('[QRIS SB] transaksi RPC ok:', JSON.stringify(data).substring(0, 200));
+        return { ok: true, data };
+    } catch (e) {
+        console.warn('[QRIS SB] transaksi RPC exception:', e.message);
+        return { ok: false, error: e.message };
+    }
+}
+
+// ── Kirim batch transaksi ke Supabase (loop individual RPC) ──
+async function kirimBatchKeSupabase(transaksiList) {
+    const results = [];
+    for (const tx of transaksiList) {
+        const r = await kirimTransaksiKeSupabase(tx);
+        results.push({ uid_hash: tx.uid_hash, ...r });
+    }
+    const matched = results.filter(r => r.data?.matched === true).length;
+    console.log(`[QRIS SB] batch ${transaksiList.length} transaksi, ${matched} matched`);
+    return results;
+}
+
+// ── Polling pending-commands langsung dari Supabase ──────────
+async function getPendingCommandFromSupabase() {
+    try {
+        const res = await fetch(
+            `${SUPABASE_URL}/rest/v1/qris_command_requests?status=eq.pending&order=created_at.asc&limit=1`,
+            { method: 'GET', headers: { ...SUPABASE_HEADERS, 'Prefer': 'return=representation' } }
+        );
+        if (!res.ok) return null;
+        const rows = await res.json().catch(() => []);
+        if (!rows || rows.length === 0) return null;
+
+        const cmd = rows[0];
+        // Mark as consumed
+        await fetch(
+            `${SUPABASE_URL}/rest/v1/qris_command_requests?id=eq.${cmd.id}`,
+            {
+                method: 'PATCH',
+                headers: { ...SUPABASE_HEADERS, 'Prefer': 'return=minimal' },
+                body: JSON.stringify({ status: 'consumed', consumed_at: new Date().toISOString() })
+            }
+        );
+        console.log('[QRIS SB] command consumed:', cmd.id, cmd.source);
+        return {
+            command: 'CEK_SEKARANG',
+            trigger: 'manual',
+            request_id: cmd.id,
+            source: cmd.source || null,
+            topup_request_id: cmd.topup_request_id || null
+        };
+    } catch (e) {
+        console.warn('[QRIS SB] pending-commands exception:', e.message);
+        return null;
+    }
+}
+
+// ── Insert log ke qris_monitor_logs via Supabase ─────────────
+async function insertMonitorLogSupabase(event, payload = {}) {
+    try {
+        await fetch(`${SUPABASE_URL}/rest/v1/qris_monitor_logs`, {
+            method: 'POST',
+            headers: SUPABASE_HEADERS,
+            body: JSON.stringify({
+                event,
+                payload: JSON.stringify(payload),
+                created_at: new Date().toISOString()
+            })
+        });
+    } catch (e) {
+        console.warn('[QRIS SB] monitor log error:', e.message);
+    }
+}
 
 const API_KEY = 'AlpaKyros_QRIS_Monitor_2026';
 const PING_TIMEOUT_MS = 5000; // timeout cek server (5 detik — lebih longgar)
@@ -396,9 +504,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
             case 'TRANSAKSI_BATCH': {
                 const batch = message.batch || [];
-                console.log(`[QRIS BG] Batch ${batch.length} transaksi → broadcast ke semua server aktif`);
+                console.log(`[QRIS BG] Batch ${batch.length} transaksi → Supabase Direct + broadcast PHP`);
 
-                const results = await kirimKeServer('transaksi-batch', { transaksi_list: batch });
+                // ── SUPABASE DIRECT (utama, selalu jalan) ──
+                const sbResults = await kirimBatchKeSupabase(batch);
+
+                // ── PHP broadcast (fallback, tidak blocking) ──
+                kirimKeServer('transaksi-batch', { transaksi_list: batch }).catch(() => {});
 
                 if (batch.length > 0) {
                     await chrome.storage.local.set({
@@ -409,17 +521,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     await chrome.storage.local.set({ totalHariIni: totalHariIni + batch.length });
                 }
 
-                sendResponse({ ok: true, results });
+                sendResponse({ ok: true, supabase: sbResults });
                 break;
             }
 
             case 'TRANSAKSI_BARU': {
-                console.log('[QRIS BG] Transaksi baru → broadcast ke semua server aktif');
+                console.log('[QRIS BG] Transaksi baru → Supabase Direct + broadcast PHP');
 
-                const results = await kirimKeServer('transaksi', {
-                    transaksi: message.data,
-                    konteks: message.semua
-                });
+                // ── SUPABASE DIRECT (utama, selalu jalan) ──
+                const sbResult = await kirimTransaksiKeSupabase(message.data);
+
+                // ── PHP broadcast (fallback, tidak blocking) ──
+                kirimKeServer('transaksi', { transaksi: message.data, konteks: message.semua }).catch(() => {});
 
                 await chrome.storage.local.set({
                     lastTransaksi: message.data,
@@ -429,19 +542,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 const { totalHariIni = 0 } = await chrome.storage.local.get('totalHariIni');
                 await chrome.storage.local.set({ totalHariIni: totalHariIni + 1 });
 
-                sendResponse({ ok: true, results });
+                sendResponse({ ok: true, supabase: sbResult });
                 break;
             }
 
             case 'SESSION_EXPIRED': {
-                await kirimKeServer('session-expired', {});
+                // Log ke Supabase direct (utama)
+                await insertMonitorLogSupabase('session_expired', {});
+                // PHP broadcast (fallback)
+                kirimKeServer('session-expired', {}).catch(() => {});
                 await chrome.storage.local.set({ sessionStatus: 'expired' });
                 sendResponse({ ok: true });
                 break;
             }
 
             case 'SUDAH_LOGIN': {
-                await kirimKeServer('monitor-up', {});
+                // Log ke Supabase direct (utama)
+                await insertMonitorLogSupabase('monitor_up', { source: 'extension' });
+                // PHP broadcast (fallback)
+                kirimKeServer('monitor-up', {}).catch(() => {});
                 await chrome.storage.local.set({
                     sessionStatus: 'active',
                     monitorStatus: 'online'
@@ -451,9 +570,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             }
 
             case 'CEK_PERINTAH': {
-                const serverResponse = await getFromServer('pending-commands');
-                const commandData = serverResponse?.data || { command: null };
-                sendResponse(commandData);
+                // ── SUPABASE DIRECT (utama) ──
+                let commandData = await getPendingCommandFromSupabase();
+                if (!commandData) {
+                    // ── Fallback ke PHP backend jika Supabase tidak ada perintah ──
+                    const serverResponse = await getFromServer('pending-commands');
+                    commandData = serverResponse?.data || { command: null };
+                }
+                sendResponse(commandData || { command: null });
                 break;
             }
 
@@ -694,9 +818,12 @@ chrome.alarms.create('auto-detect', { periodInMinutes: 2 });
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
     if (alarm.name === 'keepalive') {
-        await kirimKeServer('heartbeat', {});
+        // Supabase direct (utama)
+        await insertMonitorLogSupabase('heartbeat', {});
+        // PHP broadcast (fallback)
+        kirimKeServer('heartbeat', {}).catch(() => {});
         await retryPendingQueue();
-        console.log('[QRIS BG] Heartbeat broadcast selesai');
+        console.log('[QRIS BG] Heartbeat: Supabase + PHP broadcast selesai');
     }
     if (alarm.name === 'auto-detect') {
         await autoDetectServers();

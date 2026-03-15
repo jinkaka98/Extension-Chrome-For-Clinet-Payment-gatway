@@ -12,7 +12,8 @@
   "host_permissions": [
     "https://merchant.qris.interactive.co.id/*",
     "http://*/*",
-    "https://alpakyros.com/*"
+    "https://alpakyros.com/*",
+    "https://*.supabase.co/*"
   ],
   "background": {
     "service_worker": "background.js"
